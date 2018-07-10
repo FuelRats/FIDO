@@ -17,11 +17,13 @@ namespace FIDO
     private readonly IList<Task> messageDispatchers = new List<Task>();
 
     private StandardIrcClient irc;
+    private List<string> channels;
     public IrcClient Client => irc;
     public event EventHandler<IrcMessageEventArgs> OnMessageReceived;
 
-    public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname)
+    public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname, List<string> channels)
     {
+      this.channels = channels;
       irc = new StandardIrcClient
       {
         FloodPreventer = new IrcStandardFloodPreventer(3, 5000)
@@ -128,6 +130,7 @@ namespace FIDO
       client.LocalUser.LeftChannel += IrcClient_LocalUser_LeftChannel;
 
       client.LocalUser.SendMessage("nickserv", $"IDENTIFY {Environment.GetEnvironmentVariable("NickservPassword")}");
+      client.Channels.Join(channels);
     }
 
     private void IrcClient_LocalUser_NoticeReceived(object sender, IrcMessageEventArgs e)

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using FIDO.FloodProtections;
 using IrcDotNet;
@@ -15,6 +16,7 @@ namespace FIDO
       var nickName = Environment.GetEnvironmentVariable("NickName");
       var userName = Environment.GetEnvironmentVariable("UserName");
       var realName = Environment.GetEnvironmentVariable("RealName");
+      var channels = Environment.GetEnvironmentVariable("Channels").Split(',').Select(x=>x.Trim()).ToList();
 
       ircLayer = new IrcLayer();
 
@@ -51,7 +53,7 @@ namespace FIDO
       floodProtector = new FloodProtector(ircLayer, rate, per, muteDuration);
 
       ircLayer.OnMessageReceived += IrcLayerOnOnMessageReceived;
-      await ircLayer.Connect(server, port, useSsl, nickName, userName, realName);
+      await ircLayer.Connect(server, port, useSsl, nickName, userName, realName, channels);
     }
 
     public void SendRawMessage(string rawMessage)
