@@ -1,4 +1,6 @@
 ﻿using System.Collections.Concurrent;
+using System.Linq;
+using FIDO.Extensions;
 
 namespace FIDO.FloodProtections
 {
@@ -21,6 +23,13 @@ namespace FIDO.FloodProtections
 
     public void Check(string channel, string user)
     {
+      var ircChannel = irc.Client.Channels.Single(x => x.Name == channel);
+      var ircChannelUser = ircChannel.Users.Single(x => x.User.NickName == user);
+      if (ircChannelUser.IsModerator())
+      {
+        return;
+      }
+
       var channelFloodProtection = channels.GetOrAdd(channel, c => new ChannelFloodProtection(irc, channel, rate, per, muteDuration));
       channelFloodProtection.Check(user);
     }
