@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using FIDO.Extensions;
 
@@ -13,12 +14,23 @@ namespace FIDO.FloodProtections
     private readonly int per;
     private readonly int muteDuration;
 
-    public FloodProtector(IrcLayer irc, int rate, int per, int muteDuration)
+    public FloodProtector(IrcLayer irc)
     {
       this.irc = irc;
-      this.rate = rate;
-      this.per = per;
-      this.muteDuration = muteDuration;
+      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionRate"), out rate))
+      {
+        rate = 3;
+      }
+
+      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionTime"), out per))
+      {
+        per = 3;
+      }
+
+      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionDuration"), out muteDuration))
+      {
+        muteDuration = 3;
+      }
     }
 
     public void Check(string channel, string user)

@@ -35,22 +35,7 @@ namespace FIDO
         port = useSsl ? 6697 : 6667;
       }
 
-      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionRate"), out var rate))
-      {
-        rate = 3;
-      }
-
-      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionTime"), out var per))
-      {
-        per = 3;
-      }
-
-      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionDuration"), out var muteDuration))
-      {
-        muteDuration = 3;
-      }
-
-      floodProtector = new FloodProtector(ircLayer, rate, per, muteDuration);
+      floodProtector = new FloodProtector(ircLayer);
 
       ircLayer.OnMessageReceived += IrcLayerOnOnMessageReceived;
       await ircLayer.Connect(server, port, useSsl, nickName, userName, realName, channels);
