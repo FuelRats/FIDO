@@ -32,7 +32,6 @@ namespace FIDO
     {
       e.Cancel = true;
       run = false;
-      IrcTest.Stop();
     }
   }
 }
