@@ -18,12 +18,15 @@ namespace FIDO
 
     private StandardIrcClient irc;
     private List<string> channels;
-    public IrcClient Client => irc;
-    public event EventHandler<IrcMessageEventArgs> OnMessageReceived;
 
-    public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname, List<string> channels)
+    public IrcClient Client => irc;
+
+    public event EventHandler<IrcMessageEventArgs> OnMessageReceived;
+    public event EventHandler<IrcMessageEventArgs> OnNoticeReceived;
+
+    public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname, List<string> channelsToJoin)
     {
-      this.channels = channels;
+      channels = channelsToJoin;
       irc = new StandardIrcClient
       {
         FloodPreventer = new IrcStandardFloodPreventer(3, 5000)
@@ -102,7 +105,7 @@ namespace FIDO
       }
     }
 
-    private void DispatchMessages(BlockingCollection<IrcMessageEventArgs> queue)
+    private void DispatchMessages(BlockingCollection<IrcMessageEventArgs> queue, EventHandler<IrcMessageEventArgs> eventHandler)
     {
       while (!cancellationTokenSource.IsCancellationRequested && !queue.IsCompleted)
       {
@@ -110,7 +113,7 @@ namespace FIDO
         {
           try
           {
-            OnMessageReceived?.Invoke(this, message);
+            eventHandler?.Invoke(this, message);
           }
           catch (Exception e)
           {
@@ -124,6 +127,10 @@ namespace FIDO
     {
       var client = (IrcClient) sender;
 
+      var queue = new BlockingCollection<IrcMessageEventArgs>();
+      messageQueues["Notice"] = queue;
+      messageDispatchers.Add(Task.Run(() => DispatchMessages(queue, OnNoticeReceived)));
+
       client.LocalUser.NoticeReceived += IrcClient_LocalUser_NoticeReceived;
       client.LocalUser.MessageReceived += IrcClient_LocalUser_MessageReceived;
       client.LocalUser.JoinedChannel += IrcClient_LocalUser_JoinedChannel;
@@ -136,6 +143,7 @@ namespace FIDO
     private void IrcClient_LocalUser_NoticeReceived(object sender, IrcMessageEventArgs e)
     {
       Console.WriteLine($"Notice received: {e.Text}");
+      messageQueues["Notice"].Add(e);
     }
 
     private void IrcClient_LocalUser_LeftChannel(object sender, IrcChannelEventArgs e)
@@ -152,7 +160,7 @@ namespace FIDO
     {
       var queue = new BlockingCollection<IrcMessageEventArgs>();
       messageQueues[e.Channel.Name] = queue;
-      messageDispatchers.Add(Task.Run(() => DispatchMessages(queue)));
+      messageDispatchers.Add(Task.Run(() => DispatchMessages(queue, OnMessageReceived)));
 
       //e.Channel.UserJoined += IrcClient_Channel_UserJoined;
       //e.Channel.UserLeft += IrcClient_Channel_UserLeft;

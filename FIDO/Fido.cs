@@ -1,13 +1,18 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using FIDO.Extensions;
 using FIDO.FloodProtections;
+using FIDO.NoticeActions;
 using IrcDotNet;
 
 namespace FIDO
 {
   public class Fido
   {
+    private readonly IList<NoticeAction> noticeActions = new List<NoticeAction>();
+
     private IrcLayer ircLayer;
     private FloodProtector floodProtector;
 
@@ -36,9 +41,22 @@ namespace FIDO
       }
 
       floodProtector = new FloodProtector(ircLayer);
+      noticeActions.AddRange(NoticeAction.GetAll(ircLayer));
 
       ircLayer.OnMessageReceived += IrcLayerOnOnMessageReceived;
+      ircLayer.OnNoticeReceived += IrcLayerOnOnNoticeReceived;
       await ircLayer.Connect(server, port, useSsl, nickName, userName, realName, channels);
+    }
+
+    private void IrcLayerOnOnNoticeReceived(object sender, IrcMessageEventArgs e)
+    {
+      foreach (var noticeAction in noticeActions)
+      {
+        if (noticeAction.ExecuteOnMatch(e))
+        {
+          break;
+        }
+      }
     }
 
     public void SendRawMessage(string rawMessage)
