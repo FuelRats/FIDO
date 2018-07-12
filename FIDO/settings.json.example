@@ -1,0 +1,28 @@
+{
+	"Server": "example.com",
+	"UseSsl": false,
+	"Port": 6667,
+
+	"NickName": "Nickname",
+	"UserName": "Username",
+	"RealName": "Realname",
+	"NickservPassword": "password",
+
+	"FloodProtectionRate": 4,
+	"FloodProtectionTime": 6,
+	"FloodProtectionDuration": 10,
+
+	"Channels": "#channel1, #channel2",
+
+	"OperChannel": "#opers",
+	"OperLine": "operline",
+	"OperLinePassword": "password",
+
+	"Nexmo.api_key": "",
+	"Nexmo.api_secret": "",
+	"Numbers": "12345, 23456",
+
+	"MaxHighlightCount": 5,
+	"KillReason":
+		"You must not attempt to disrupt the IRC servers, services or the servers they run on, including but not limited to DDoS attacks, attempts to gain privileges, flooding or otherwise interfering with the service(s)."
+}

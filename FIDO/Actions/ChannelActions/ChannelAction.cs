@@ -1,8 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.ChannelActions
 {
@@ -11,22 +11,28 @@ namespace FIDO.Actions.ChannelActions
     private readonly IrcLayer irc;
     private readonly string killReason;
 
-    protected ChannelAction(IrcLayer irc, NexmoClient nexmo)
-      : base(irc, nexmo)
+    protected ChannelAction(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
+      : base(irc, nexmo, configuration)
     {
       this.irc = irc;
-      killReason = Environment.GetEnvironmentVariable("KillReason");
+      killReason = configuration["KillReason"];
     }
 
-    public static IEnumerable<ChannelAction> GetAll(IrcLayer irc, NexmoClient nexmo)
+    public static IEnumerable<ChannelAction> GetAll(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
     {
-      yield return new ZalgoProctection(irc, nexmo);
+      yield return new HighlightCount(irc, nexmo, configuration);
+      //yield return new ZalgoProctection(irc, nexmo);
     }
 
     public abstract bool Execute(IrcMessageEventArgs ircMessage);
 
     protected void Kill(IrcUser user, string reason = null)
     {
+      if (user == null)
+      {
+        return;
+      }
+
       if (string.IsNullOrWhiteSpace(reason))
       {
         reason = killReason;

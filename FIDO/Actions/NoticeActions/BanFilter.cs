@@ -2,6 +2,7 @@
 using FIDO.Extensions;
 using FIDO.Irc;
 using FIDO.Nexmo;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.NoticeActions
 {
@@ -9,8 +10,8 @@ namespace FIDO.Actions.NoticeActions
   {
     private static readonly Regex regex = new Regex("(?<message>Global [A-Z]*:Line added .*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public BanFilter(IrcLayer irc, NexmoClient nexmo)
-      : base(irc, nexmo)
+    public BanFilter(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
+      : base(irc, nexmo, configuration)
     {
     }
 

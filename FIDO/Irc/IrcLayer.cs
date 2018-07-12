@@ -7,17 +7,24 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using IrcDotNet;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Irc
 {
   public class IrcLayer
   {
+    private readonly IConfiguration configuration;
     private readonly Dictionary<string, BlockingCollection<IrcMessageEventArgs>> messageQueues = new Dictionary<string, BlockingCollection<IrcMessageEventArgs>>();
     private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
     private readonly IList<Task> messageDispatchers = new List<Task>();
 
     private StandardIrcClient irc;
     private List<string> channels;
+
+    public IrcLayer(IConfiguration configuration)
+    {
+      this.configuration = configuration;
+    }
 
     public IrcClient Client => irc;
 
@@ -109,16 +116,10 @@ namespace FIDO.Irc
     {
       while (!cancellationTokenSource.IsCancellationRequested && !queue.IsCompleted)
       {
-        if (queue.TryTake(out var message))
+        var messages = queue.GetConsumingEnumerable(cancellationTokenSource.Token);
+        foreach (var message in messages)
         {
-          try
-          {
-            eventHandler?.Invoke(this, message);
-          }
-          catch (Exception e)
-          {
-            Console.WriteLine(e);
-          }
+          eventHandler?.Invoke(this, message);
         }
       }
     }
@@ -136,10 +137,10 @@ namespace FIDO.Irc
       client.LocalUser.JoinedChannel += IrcClient_LocalUser_JoinedChannel;
       client.LocalUser.LeftChannel += IrcClient_LocalUser_LeftChannel;
 
-      client.LocalUser.SendMessage("nickserv", $"IDENTIFY {Environment.GetEnvironmentVariable("NickservPassword")}");
+      client.LocalUser.SendMessage("nickserv", $"IDENTIFY {configuration["NickservPassword"]}");
 
-      var operLine = Environment.GetEnvironmentVariable("OperLine");
-      var operLinePassword = Environment.GetEnvironmentVariable("OperLinePassword");
+      var operLine = configuration["OperLine"];
+      var operLinePassword = configuration["OperLinePassword"];
       if (!string.IsNullOrWhiteSpace(operLine) && !string.IsNullOrWhiteSpace(operLinePassword))
       {
         client.SendRawMessage($"OPER {operLine} {operLinePassword}");
@@ -211,7 +212,12 @@ namespace FIDO.Irc
 
     private static void IrcOnRawMessageSent(object sender, IrcRawMessageEventArgs e)
     {
-      Console.WriteLine("Sent: " + e?.RawContent);
+      if (e == null || e.RawContent.Contains("nickserv"))
+      {
+        return;
+      }
+
+      Console.WriteLine("Sent: " + e.RawContent);
     }
 
     private static void OnIrcOnOnError(object sender, IrcErrorEventArgs e)

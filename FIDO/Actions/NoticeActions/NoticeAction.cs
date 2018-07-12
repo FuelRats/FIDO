@@ -4,26 +4,27 @@ using System.Text.RegularExpressions;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.NoticeActions
 {
   public abstract class NoticeAction : Action
   {
-    protected NoticeAction(IrcLayer irc, NexmoClient nexmo)
-      : base(irc, nexmo)
+    protected NoticeAction(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
+      : base(irc, nexmo, configuration)
     {
     }
 
     protected abstract Regex Regex { get; }
 
-    public static IEnumerable<NoticeAction> GetAll(IrcLayer irc, NexmoClient nexmo)
+    public static IEnumerable<NoticeAction> GetAll(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
     {
-      yield return new BanFilter(irc, nexmo);
-      yield return new ExpireFilter(irc, nexmo);
-      yield return new FailedOperFilter(irc, nexmo);
-      yield return new KillFilter(irc, nexmo);
-      yield return new OperServFilter(irc, nexmo);
-      yield return new SpamFilter(irc, nexmo);
+      yield return new BanFilter(irc, nexmo, configuration);
+      yield return new ExpireFilter(irc, nexmo, configuration);
+      yield return new FailedOperFilter(irc, nexmo, configuration);
+      yield return new KillFilter(irc, nexmo, configuration);
+      yield return new OperServFilter(irc, nexmo, configuration);
+      yield return new SpamFilter(irc, nexmo, configuration);
     }
 
     public bool ExecuteOnMatch(IrcMessageEventArgs ircMessageEventArgs)

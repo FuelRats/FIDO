@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.ChannelActions
 {
@@ -16,8 +17,8 @@ namespace FIDO.Actions.ChannelActions
     private static readonly Regex regex = new Regex(@"\[\p{Mn}\p{Me}\]+", RegexOptions.Compiled);
     private static readonly Regex split = new Regex(@"\s+", RegexOptions.Compiled);
 
-    public ZalgoProctection(IrcLayer irc, NexmoClient nexmo)
-      : base(irc, nexmo)
+    public ZalgoProctection(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
+      : base(irc, nexmo, configuration)
     {
     }
 

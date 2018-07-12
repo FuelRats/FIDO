@@ -2,6 +2,7 @@
 using FIDO.Extensions;
 using FIDO.Irc;
 using FIDO.Nexmo;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.NoticeActions
 {
@@ -9,8 +10,8 @@ namespace FIDO.Actions.NoticeActions
   {
     private static readonly Regex regex = new Regex("Failed OPER attempt (?<message>.*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public FailedOperFilter(IrcLayer irc, NexmoClient nexmo)
-      : base(irc, nexmo)
+    public FailedOperFilter(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
+      : base(irc, nexmo, configuration)
     {
     }
 

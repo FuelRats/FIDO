@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO
 {
@@ -9,14 +10,19 @@ namespace FIDO
 
     private static async Task Main()
     {
+      var configurationBuilder = new ConfigurationBuilder();
+      configurationBuilder.AddJsonFile("settings.json");
+
+      var configuration = configurationBuilder.Build();
+
       Console.CancelKeyPress += ConsoleOnCancelKeyPress;
-      await RunFido();
+      await RunFido(configuration);
       Console.ReadKey();
     }
 
-    private static async Task RunFido()
+    private static async Task RunFido(IConfiguration configuration)
     {
-      var fido = new Fido();
+      var fido = new Fido(configuration);
       await fido.Run();
 
       while (run)

@@ -2,6 +2,7 @@
 using FIDO.Extensions;
 using FIDO.Irc;
 using FIDO.Nexmo;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.NoticeActions
 {
@@ -9,8 +10,8 @@ namespace FIDO.Actions.NoticeActions
   {
     private static readonly Regex regex = new Regex("from OperServ: (?<message>.*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public OperServFilter(IrcLayer irc, NexmoClient nexmo)
-      : base(irc, nexmo)
+    public OperServFilter(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
+      : base(irc, nexmo, configuration)
     {
     }
 

@@ -1,8 +1,8 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions
 {
@@ -12,12 +12,12 @@ namespace FIDO.Actions
     private readonly NexmoClient nexmo;
     private readonly string reportChannel;
 
-    protected Action(IrcLayer irc, NexmoClient nexmo)
+    protected Action(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
     {
       this.irc = irc;
       this.nexmo = nexmo;
 
-      reportChannel = Environment.GetEnvironmentVariable("OperChannel");
+      reportChannel = configuration["OperChannel"];
       if (string.IsNullOrWhiteSpace(reportChannel))
       {
         reportChannel = "#opers";

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using FIDO.Extensions;
+using Microsoft.Extensions.Configuration;
 using Nexmo.Api;
 using Nexmo.Api.Request;
 
@@ -9,17 +11,17 @@ namespace FIDO.Nexmo
   public class NexmoClient
   {
     private readonly Credentials creds;
-    private readonly IList<string> numbers;
+    private readonly IList<string> numbers = new List<string>();
 
-    public NexmoClient()
+    public NexmoClient(IConfiguration configuration)
     {
       creds = new Credentials
       {
-        ApiKey = Environment.GetEnvironmentVariable("Nexmo.api_key"),
-        ApiSecret = Environment.GetEnvironmentVariable("Nexmo.api_secret")
+        ApiKey = configuration["Nexmo.api_key"],
+        ApiSecret = configuration["Nexmo.api_secret"]
       };
 
-      numbers = Environment.GetEnvironmentVariable("Numbers")?.Split(',').Select(x => x.Trim()).ToList();
+      numbers.AddRange(configuration["Numbers"].Split(',').Select(x => x.Trim()));
     }
 
     public void SendSms(string message)

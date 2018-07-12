@@ -9,11 +9,13 @@ using FIDO.FloodProtections;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO
 {
   public class Fido
   {
+    private readonly IConfiguration configuration;
     private readonly IList<NoticeAction> noticeActions = new List<NoticeAction>();
     private readonly IList<ChannelAction> channelActions = new List<ChannelAction>();
 
@@ -21,34 +23,38 @@ namespace FIDO
     private FloodProtector floodProtector;
     private NexmoClient nexmo;
 
+    public Fido(IConfiguration configuration)
+    {
+      this.configuration = configuration;
+    }
+
     public async Task Run()
     {
-      var nickName = Environment.GetEnvironmentVariable("NickName");
-      var userName = Environment.GetEnvironmentVariable("UserName");
-      var realName = Environment.GetEnvironmentVariable("RealName");
-      var channels = Environment.GetEnvironmentVariable("Channels").Split(',').Select(x => x.Trim()).ToList();
+      var nickName = configuration["NickName"];
+      var userName = configuration["UserName"];
+      var realName = configuration["RealName"];
+      var channels = configuration["Channels"].Split(',').Select(x => x.Trim()).ToList();
 
-      ircLayer = new IrcLayer();
+      ircLayer = new IrcLayer(configuration);
 
-      var server = Environment.GetEnvironmentVariable("Server");
+      var server = configuration["Server"];
       if (string.IsNullOrWhiteSpace(server))
       {
         throw new Exception("No server given");
       }
 
-      var hasPort = int.TryParse(Environment.GetEnvironmentVariable("Port"), out var port);
-      bool.TryParse(Environment.GetEnvironmentVariable("UseSsl"), out var useSsl);
-      //bool.TryParse(Environment.GetEnvironmentVariable("AcceptInvalidCerts"), out var acceptInvalidCerts);
+      var hasPort = int.TryParse(configuration["Port"], out var port);
+      bool.TryParse(configuration["UseSsl"], out var useSsl);
 
       if (!hasPort)
       {
         port = useSsl ? 6697 : 6667;
       }
 
-      nexmo = new NexmoClient();
-      floodProtector = new FloodProtector(ircLayer);
-      noticeActions.AddRange(NoticeAction.GetAll(ircLayer, nexmo));
-      channelActions.AddRange(ChannelAction.GetAll(ircLayer, nexmo));
+      nexmo = new NexmoClient(configuration);
+      floodProtector = new FloodProtector(ircLayer, configuration);
+      noticeActions.AddRange(NoticeAction.GetAll(ircLayer, nexmo, configuration));
+      channelActions.AddRange(ChannelAction.GetAll(ircLayer, nexmo, configuration));
 
       ircLayer.OnMessageReceived += IrcLayerOnOnMessageReceived;
       ircLayer.OnNoticeReceived += IrcLayerOnOnNoticeReceived;

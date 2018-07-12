@@ -1,8 +1,8 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Linq;
 using FIDO.Extensions;
 using FIDO.Irc;
+using Microsoft.Extensions.Configuration;
 
 namespace FIDO.FloodProtections
 {
@@ -15,20 +15,20 @@ namespace FIDO.FloodProtections
     private readonly int per;
     private readonly int muteDuration;
 
-    public FloodProtector(IrcLayer irc)
+    public FloodProtector(IrcLayer irc, IConfiguration configuration)
     {
       this.irc = irc;
-      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionRate"), out rate))
+      if (!int.TryParse(configuration["FloodProtectionRate"], out rate))
       {
         rate = 3;
       }
 
-      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionTime"), out per))
+      if (!int.TryParse(configuration["FloodProtectionTime"], out per))
       {
         per = 3;
       }
 
-      if (!int.TryParse(Environment.GetEnvironmentVariable("FloodProtectionDuration"), out muteDuration))
+      if (!int.TryParse(configuration["FloodProtectionDuration"], out muteDuration))
       {
         muteDuration = 3;
       }
