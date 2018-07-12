@@ -15,10 +15,8 @@ namespace FIDO.Nexmo
     {
       creds = new Credentials
       {
-        ApiKey = Environment.GetEnvironmentVariable("Nexmo.UserAgent"),
-        ApiSecret = Environment.GetEnvironmentVariable("Nexmo.api_secret"),
-        ApplicationId = Environment.GetEnvironmentVariable("Nexmo.Application.Id"),
-        ApplicationKey = Environment.GetEnvironmentVariable("Nexmo.Application.Key")
+        ApiKey = Environment.GetEnvironmentVariable("Nexmo.api_key"),
+        ApiSecret = Environment.GetEnvironmentVariable("Nexmo.api_secret")
       };
 
       numbers = Environment.GetEnvironmentVariable("Numbers")?.Split(',').Select(x => x.Trim()).ToList();
@@ -28,12 +26,17 @@ namespace FIDO.Nexmo
     {
       foreach (var number in numbers)
       {
-        SMS.Send(new SMS.SMSRequest
+        var response = SMS.Send(new SMS.SMSRequest
         {
-          from = "FIDO",
+          from = "FuelRats",
           to = number,
           text = message
         }, creds);
+
+        foreach (var errorMessage in response.messages.Where(x => x.status != "0"))
+        {
+          Console.WriteLine($"Error sending sms: {errorMessage}");
+        }
       }
     }
   }
