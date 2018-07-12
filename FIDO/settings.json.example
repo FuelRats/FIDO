@@ -10,7 +10,7 @@
 
 	"FloodProtectionRate": 4,
 	"FloodProtectionTime": 6,
-	"FloodProtectionDuration": 10,
+	"FloodProtectionBanDuration": 5,
 
 	"Channels": "#channel1, #channel2",
 

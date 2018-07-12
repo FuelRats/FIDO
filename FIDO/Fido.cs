@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using FIDO.Actions.ChannelActions;
 using FIDO.Actions.NoticeActions;
 using FIDO.Extensions;
-using FIDO.FloodProtections;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
@@ -20,7 +19,6 @@ namespace FIDO
     private readonly IList<ChannelAction> channelActions = new List<ChannelAction>();
 
     private IrcLayer ircLayer;
-    private FloodProtector floodProtector;
     private NexmoClient nexmo;
 
     public Fido(IConfiguration configuration)
@@ -52,7 +50,6 @@ namespace FIDO
       }
 
       nexmo = new NexmoClient(configuration);
-      floodProtector = new FloodProtector(ircLayer, configuration);
       noticeActions.AddRange(NoticeAction.GetAll(ircLayer, nexmo, configuration));
       channelActions.AddRange(ChannelAction.GetAll(ircLayer, nexmo, configuration));
 
@@ -84,11 +81,6 @@ namespace FIDO
 
     private void IrcLayerOnOnMessageReceived(object sender, IrcMessageEventArgs ircMessageEventArgs)
     {
-      foreach (var ircMessageTarget in ircMessageEventArgs.Targets)
-      {
-        floodProtector.Check(ircMessageTarget.Name, ircMessageEventArgs.Source.Name);
-      }
-
       foreach (var channelAction in channelActions)
       {
         if (channelAction.Execute(ircMessageEventArgs))

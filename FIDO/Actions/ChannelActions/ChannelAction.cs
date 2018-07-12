@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using FIDO.Actions.ChannelActions.Flooding;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
@@ -20,6 +21,7 @@ namespace FIDO.Actions.ChannelActions
 
     public static IEnumerable<ChannelAction> GetAll(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
     {
+      yield return new FloodProtector(irc, nexmo, configuration);
       yield return new HighlightCount(irc, nexmo, configuration);
       //yield return new ZalgoProctection(irc, nexmo);
     }
