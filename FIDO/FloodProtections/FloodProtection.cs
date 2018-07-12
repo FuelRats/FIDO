@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Timers;
+using FIDO.Irc;
 
 namespace FIDO.FloodProtections
 {

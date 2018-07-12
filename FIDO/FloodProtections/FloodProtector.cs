@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using FIDO.Extensions;
+using FIDO.Irc;
 
 namespace FIDO.FloodProtections
 {

@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using IrcDotNet;
 
-namespace FIDO
+namespace FIDO.Irc
 {
   public class IrcLayer
   {
@@ -137,6 +137,14 @@ namespace FIDO
       client.LocalUser.LeftChannel += IrcClient_LocalUser_LeftChannel;
 
       client.LocalUser.SendMessage("nickserv", $"IDENTIFY {Environment.GetEnvironmentVariable("NickservPassword")}");
+
+      var operLine = Environment.GetEnvironmentVariable("OperLine");
+      var operLinePassword = Environment.GetEnvironmentVariable("OperLinePassword");
+      if (!string.IsNullOrWhiteSpace(operLine) && !string.IsNullOrWhiteSpace(operLinePassword))
+      {
+        client.SendRawMessage($"OPER {operLine} {operLinePassword}");
+      }
+
       client.Channels.Join(channels);
     }
 

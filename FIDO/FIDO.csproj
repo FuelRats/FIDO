@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="IrcDotNet" Version="0.7.0" />
+    <PackageReference Include="Nexmo.Csharp.Client" Version="3.0.1" />
   </ItemGroup>
 
 </Project>

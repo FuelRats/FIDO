@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using FIDO.Irc;
 
 namespace FIDO.FloodProtections
 {
