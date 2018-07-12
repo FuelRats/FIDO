@@ -72,7 +72,7 @@ namespace FIDO.Actions.ChannelActions.Flooding
 
     private void MuteUser(IrcChannelUser ircChannelUser)
     {
-      var mute = new ChannelMute(ircChannelUser.Channel, ircChannelUser.User.HostName);
+      var mute = new ChannelMute(ircChannelUser);
       if (mutes.TryAdd(GetKey(ircChannelUser.Channel, ircChannelUser.User), mute))
       {
         mute.Mute(muteDuration);
