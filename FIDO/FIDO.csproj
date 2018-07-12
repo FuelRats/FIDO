@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Flurl.Http" Version="2.3.2" />
     <PackageReference Include="IrcDotNet" Version="0.7.0" />
     <PackageReference Include="Nexmo.Csharp.Client" Version="3.0.1" />
   </ItemGroup>
