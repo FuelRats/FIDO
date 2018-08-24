@@ -25,6 +25,7 @@ namespace FIDO.Actions.NoticeActions
       yield return new KillFilter(irc, nexmo, configuration);
       yield return new OperServFilter(irc, nexmo, configuration);
       yield return new SpamFilter(irc, nexmo, configuration);
+      yield return new SessionTracker(irc, nexmo, configuration);
     }
 
     public bool ExecuteOnMatch(IrcMessageEventArgs ircMessageEventArgs)

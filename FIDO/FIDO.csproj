@@ -15,12 +15,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Fastenshtein" Version="1.0.0.4" />
     <PackageReference Include="Flurl.Http" Version="2.3.2" />
     <PackageReference Include="IrcDotNet" Version="0.7.0" />
     <PackageReference Include="Nexmo.Csharp.Client" Version="3.0.1" />
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="settings.json.example">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
