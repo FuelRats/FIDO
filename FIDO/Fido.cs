@@ -28,6 +28,10 @@ namespace FIDO
       this.configuration = configuration;
     }
 
+    public bool IsConnected { get; private set; }
+
+    public event EventHandler Disconnected;
+
     public async Task Run()
     {
       var nickName = configuration["NickName"];
@@ -58,7 +62,9 @@ namespace FIDO
 
       ircLayer.OnMessageReceived += IrcLayerOnOnMessageReceived;
       ircLayer.OnNoticeReceived += IrcLayerOnOnNoticeReceived;
+      ircLayer.Disconnected += IrcLayerDisconnected;
       await ircLayer.Connect(server, port, useSsl, nickName, userName, realName, channels);
+      IsConnected = true;
     }
 
     public void SendRawMessage(string rawMessage)
@@ -69,6 +75,12 @@ namespace FIDO
     public async Task Disconnect()
     {
       await ircLayer.Disconnect();
+    }
+
+    private void IrcLayerDisconnected(object sender, EventArgs e)
+    {
+      IsConnected = false;
+      Disconnected?.Invoke(sender, e);
     }
 
     private void IrcLayerOnOnNoticeReceived(object sender, IrcMessageEventArgs e)

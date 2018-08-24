@@ -30,6 +30,7 @@ namespace FIDO.Irc
 
     public event EventHandler<IrcMessageEventArgs> OnMessageReceived;
     public event EventHandler<IrcMessageEventArgs> OnNoticeReceived;
+    public event EventHandler Disconnected;
 
     public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname, List<string> channelsToJoin)
     {
@@ -42,6 +43,7 @@ namespace FIDO.Irc
       irc.RawMessageSent += IrcOnRawMessageSent;
       irc.Error += OnIrcOnOnError;
       irc.Registered += IrcOnRegistered;
+      irc.Disconnected += IrcOnDisconnected;
 
       try
       {
@@ -112,15 +114,50 @@ namespace FIDO.Irc
       }
     }
 
+    private void IrcOnDisconnected(object sender, EventArgs e)
+    {
+      if (irc != null)
+      {
+        irc.RawMessageSent -= IrcOnRawMessageSent;
+        irc.Error -= OnIrcOnOnError;
+        irc.Registered -= IrcOnRegistered;
+        irc.Disconnected -= IrcOnDisconnected;
+
+        if (irc.LocalUser != null)
+        {
+          irc.LocalUser.NoticeReceived -= IrcClient_LocalUser_NoticeReceived;
+          irc.LocalUser.MessageReceived -= IrcClient_LocalUser_MessageReceived;
+          irc.LocalUser.JoinedChannel -= IrcClient_LocalUser_JoinedChannel;
+          irc.LocalUser.LeftChannel -= IrcClient_LocalUser_LeftChannel;
+        }
+
+        foreach (var channel in irc.Channels)
+        {
+          channel.MessageReceived -= IrcClient_Channel_MessageReceived;
+          //e.Channel.UserJoined -= IrcClient_Channel_UserJoined;
+          //e.Channel.UserLeft -= IrcClient_Channel_UserLeft;
+          //e.Channel.NoticeReceived -= IrcClient_Channel_NoticeReceived;
+        }
+      }
+
+      Disconnected?.Invoke(sender, e);
+    }
+
     private void DispatchMessages(BlockingCollection<IrcMessageEventArgs> queue, EventHandler<IrcMessageEventArgs> eventHandler)
     {
-      while (!cancellationTokenSource.IsCancellationRequested && !queue.IsCompleted)
+      try
       {
-        var messages = queue.GetConsumingEnumerable(cancellationTokenSource.Token);
-        foreach (var message in messages)
+        while (!cancellationTokenSource.IsCancellationRequested && !queue.IsCompleted)
         {
-          eventHandler?.Invoke(this, message);
+          var messages = queue.GetConsumingEnumerable(cancellationTokenSource.Token);
+          foreach (var message in messages)
+          {
+            eventHandler?.Invoke(this, message);
+          }
         }
+      }
+      catch (OperationCanceledException)
+      {
       }
     }
 

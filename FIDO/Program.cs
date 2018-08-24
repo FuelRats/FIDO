@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 
@@ -6,38 +7,55 @@ namespace FIDO
 {
   public class Program
   {
+    private static readonly ManualResetEvent manualResetEvent = new ManualResetEvent(false);
+    private static Fido fido;
     private static bool run = true;
 
     private static async Task Main()
     {
+      AppDomain.CurrentDomain.UnhandledException += AppDomainOnUnhandledException;
       var configurationBuilder = new ConfigurationBuilder();
       configurationBuilder.AddJsonFile("settings.json");
 
       var configuration = configurationBuilder.Build();
 
       Console.CancelKeyPress += ConsoleOnCancelKeyPress;
-      await RunFido(configuration);
+      fido = new Fido(configuration);
+      fido.Disconnected += FidoOnDisconnected;
+      await RunFido();
+
       Console.ReadKey();
     }
 
-    private static async Task RunFido(IConfiguration configuration)
+    private static void AppDomainOnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-      var fido = new Fido(configuration);
+      Console.WriteLine(e.ExceptionObject);
+    }
+
+    private static async Task RunFido()
+    {
       await fido.Run();
+      manualResetEvent.WaitOne();
 
-      while (run)
+      if (fido.IsConnected)
       {
-        var line = Console.ReadLine();
-        fido.SendRawMessage(line);
+        await fido.Disconnect();
       }
+    }
 
-      await fido.Disconnect();
+    private static async void FidoOnDisconnected(object sender, EventArgs e)
+    {
+      if (run)
+      {
+        await fido.Run();
+      }
     }
 
     private static void ConsoleOnCancelKeyPress(object sender, ConsoleCancelEventArgs e)
     {
       e.Cancel = true;
       run = false;
+      manualResetEvent.Set();
     }
   }
 }
