@@ -17,6 +17,8 @@ namespace FIDO.Actions.NoticeActions
 
     protected override Regex Regex => regex;
 
+    protected override ActionMode Mode => ActionMode.All;
+
     protected override void OnMatch(string sender, string nick, string host, string filter, string message, string target)
     {
       ReportToIrc($"{"OPER FAILED".WrapWithColour(Colours.LightRed)} {message}");

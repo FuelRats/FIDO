@@ -42,7 +42,9 @@ namespace FIDO.Actions.ChannelActions.Flooding
       muteDuration *= 60 * 1000; // convert minutes to milliseconds
     }
 
-    public override bool Execute(IrcMessageEventArgs ircMessage)
+    protected override ActionMode Mode => ActionMode.All;
+
+    protected override bool OnExecute(IrcMessageEventArgs ircMessage)
     {
       var user = ircMessage.Source.Name;
       foreach (var ircMessageTarget in ircMessage.Targets)

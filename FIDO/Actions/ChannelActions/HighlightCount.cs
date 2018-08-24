@@ -21,7 +21,9 @@ namespace FIDO.Actions.ChannelActions
       }
     }
 
-    public override bool Execute(IrcMessageEventArgs ircMessage)
+    protected override ActionMode Mode => ActionMode.OnlyUsers;
+
+    protected override bool OnExecute(IrcMessageEventArgs ircMessage)
     {
       var words = split.Split(ircMessage.Text);
       var highlightCount = words.Select(GetUser).Count(x => x != null);

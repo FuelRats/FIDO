@@ -62,6 +62,7 @@ namespace FIDO
 
       ircLayer.OnMessageReceived += IrcLayerOnOnMessageReceived;
       ircLayer.OnNoticeReceived += IrcLayerOnOnNoticeReceived;
+      ircLayer.OnQueryReceived += IrcLayerOnOnQueryReceived;
       ircLayer.Disconnected += IrcLayerDisconnected;
       await ircLayer.Connect(server, port, useSsl, nickName, userName, realName, channels);
       IsConnected = true;
@@ -77,17 +78,28 @@ namespace FIDO
       await ircLayer.Disconnect();
     }
 
+    private void IrcLayerOnOnQueryReceived(object sender, IrcMessageEventArgs ircMessageEventArgs)
+    {
+      foreach (var command in channelCommands)
+      {
+        if (command.Execute(ircMessageEventArgs))
+        {
+          return;
+        }
+      }
+    }
+
     private void IrcLayerDisconnected(object sender, EventArgs e)
     {
       IsConnected = false;
       Disconnected?.Invoke(sender, e);
     }
 
-    private void IrcLayerOnOnNoticeReceived(object sender, IrcMessageEventArgs e)
+    private void IrcLayerOnOnNoticeReceived(object sender, IrcMessageEventArgs ircMessageEventArgs)
     {
       foreach (var noticeAction in noticeActions)
       {
-        if (noticeAction.ExecuteOnMatch(e))
+        if (noticeAction.Execute(ircMessageEventArgs))
         {
           return;
         }
@@ -106,7 +118,7 @@ namespace FIDO
 
       foreach (var command in channelCommands)
       {
-        if (command.ExecuteOnMatch(ircMessageEventArgs))
+        if (command.Execute(ircMessageEventArgs))
         {
           return;
         }

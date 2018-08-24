@@ -30,6 +30,7 @@ namespace FIDO.Irc
 
     public event EventHandler<IrcMessageEventArgs> OnMessageReceived;
     public event EventHandler<IrcMessageEventArgs> OnNoticeReceived;
+    public event EventHandler<IrcMessageEventArgs> OnQueryReceived;
     public event EventHandler Disconnected;
 
     public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname, List<string> channelsToJoin)
@@ -165,9 +166,13 @@ namespace FIDO.Irc
     {
       var client = (IrcClient) sender;
 
-      var queue = new BlockingCollection<IrcMessageEventArgs>();
-      messageQueues["Notice"] = queue;
-      messageDispatchers.Add(Task.Run(() => DispatchMessages(queue, OnNoticeReceived)));
+      var noticeQueue = new BlockingCollection<IrcMessageEventArgs>();
+      messageQueues["Notice"] = noticeQueue;
+      messageDispatchers.Add(Task.Run(() => DispatchMessages(noticeQueue, OnNoticeReceived)));
+
+      var queryQueue = new BlockingCollection<IrcMessageEventArgs>();
+      messageQueues["Query"] = queryQueue;
+      messageDispatchers.Add(Task.Run(() => DispatchMessages(queryQueue, OnQueryReceived)));
 
       client.LocalUser.NoticeReceived += IrcClient_LocalUser_NoticeReceived;
       client.LocalUser.MessageReceived += IrcClient_LocalUser_MessageReceived;
@@ -227,24 +232,8 @@ namespace FIDO.Irc
     private void IrcClient_LocalUser_MessageReceived(object sender, IrcMessageEventArgs e)
     {
       Console.WriteLine($"Query received: {e.Text} from {e.Source.Name}");
-      var parts = e.Text.Split(' ');
-      if (!parts.Any())
-      {
-        return;
-      }
-
-      switch (parts[0])
-      {
-        case "join" when parts.Length == 2:
-          irc.Channels.Join(parts[1]);
-          break;
-        case "part" when parts.Length == 2:
-          irc.Channels.Leave(parts.Skip(1), "Leaving channel! QQ");
-          break;
-        default:
-          Console.WriteLine($"Unknown command: {parts[0]}");
-          break;
-      }
+      var blockingCollection = messageQueues["Query"];
+      blockingCollection.Add(e);
     }
 
     private static void IrcOnRawMessageSent(object sender, IrcRawMessageEventArgs e)

@@ -5,6 +5,7 @@ using FIDO.Irc;
 using FIDO.Nexmo;
 using Flurl;
 using Flurl.Http;
+using IrcDotNet;
 using Microsoft.Extensions.Configuration;
 
 namespace FIDO.Actions.Commands
@@ -21,7 +22,9 @@ namespace FIDO.Actions.Commands
 
     protected override Regex Regex => regex;
 
-    protected override void OnMatch(string sender, string nick, string host, string filter, string message, string target)
+    protected override ActionMode Mode => ActionMode.OnlyAdmins;
+
+    protected override void OnMatch(IrcMessageEventArgs ircMessage, string sender, string nick, string host, string filter, string message, string target)
     {
       IpFetchResult result = null;
       try
@@ -38,7 +41,10 @@ namespace FIDO.Actions.Commands
         return;
       }
 
-      ReportToIrc(result.ToString());
+      foreach (var ircMessageTarget in ircMessage.Targets)
+      {
+        ReportToIrc(result.ToString(), GetResponseChannel(ircMessage.Source.Name, ircMessageTarget.Name));
+      }
     }
 
     // ReSharper disable once ClassNeverInstantiated.Local

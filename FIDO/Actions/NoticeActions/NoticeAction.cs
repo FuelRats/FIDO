@@ -28,7 +28,7 @@ namespace FIDO.Actions.NoticeActions
       yield return new SessionTracker(irc, nexmo, configuration);
     }
 
-    public bool ExecuteOnMatch(IrcMessageEventArgs ircMessageEventArgs)
+    protected override bool OnExecute(IrcMessageEventArgs ircMessageEventArgs)
     {
       var match = Regex.Match(ircMessageEventArgs.Text);
 

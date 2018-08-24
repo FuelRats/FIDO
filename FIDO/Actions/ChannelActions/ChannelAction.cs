@@ -26,8 +26,6 @@ namespace FIDO.Actions.ChannelActions
       //yield return new ZalgoProctection(irc, nexmo);
     }
 
-    public abstract bool Execute(IrcMessageEventArgs ircMessage);
-
     protected void Kill(IrcUser user, string reason = null)
     {
       if (user == null)

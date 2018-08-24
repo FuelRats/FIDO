@@ -22,7 +22,9 @@ namespace FIDO.Actions.ChannelActions
     {
     }
 
-    public override bool Execute(IrcMessageEventArgs ircMessage)
+    protected override ActionMode Mode => ActionMode.OnlyUsers;
+
+    protected override bool OnExecute(IrcMessageEventArgs ircMessage)
     {
       var isZalgo = IsZalgo(ircMessage.Text);
       if (isZalgo)

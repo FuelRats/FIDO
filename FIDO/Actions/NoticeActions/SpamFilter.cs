@@ -17,12 +17,13 @@ namespace FIDO.Actions.NoticeActions
 
     protected override Regex Regex => regex;
 
+    protected override ActionMode Mode => ActionMode.All;
+
     protected override void OnMatch(string sender, string nick, string host, string filter, string message, string target)
     {
       if (filter == "*opsignal*" || filter == "*opssignal*")
       {
         ReportToIrc($@"{"OPSIGNAL".WrapWithColour(Colours.LightRed)} by {nick} in channel / query {target}. Original message: ""{message}""");
-        // TODO SMS client.textNotification(`OPSIGNAL by ${ nick} in channel / query ${ target}. Original message: ${ message}`)
         SendSms($"OPSIGNAL by {nick} in channel / query {target}. Original message: {message}");
       }
       else

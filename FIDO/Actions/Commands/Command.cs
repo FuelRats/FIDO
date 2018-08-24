@@ -20,11 +20,13 @@ namespace FIDO.Actions.Commands
     public static IEnumerable<Command> GetAll(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
     {
       yield return new Fetch(irc, nexmo, configuration);
+      yield return new Join(irc, nexmo, configuration);
+      yield return new Part(irc, nexmo, configuration);
     }
 
-    public bool ExecuteOnMatch(IrcMessageEventArgs ircMessageEventArgs)
+    protected override bool OnExecute(IrcMessageEventArgs ircMessage)
     {
-      var match = Regex.Match(ircMessageEventArgs.Text);
+      var match = Regex.Match(ircMessage.Text);
 
       if (!match.Success)
       {
@@ -38,12 +40,12 @@ namespace FIDO.Actions.Commands
       var message = GetGroupValueByName(match, "message");
       var target = GetGroupValueByName(match, "target");
 
-      OnMatch(sender, nick, host, filter, message, target);
+      OnMatch(ircMessage, sender, nick, host, filter, message, target);
 
       return true;
     }
 
-    protected abstract void OnMatch(string sender, string nick, string host, string filter, string message, string target);
+    protected abstract void OnMatch(IrcMessageEventArgs ircMessage, string sender, string nick, string host, string filter, string message, string target);
 
     private static string GetGroupValueByName(Match match, string name)
     {

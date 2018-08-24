@@ -23,6 +23,8 @@ namespace FIDO.Actions.NoticeActions
 
     protected override Regex Regex => new Regex(@"(Client connecting: (?<nick>[A-Za-z0-9_´|\[\]]*) \((?<user>[A-Za-z0-9_´|\[\]]*)@(?<host>[A-Za-z0-9.:_\-]*)\) \[(?<filter>[0-9.:A-F-a-f]*)\])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    protected override ActionMode Mode => ActionMode.All;
+
     protected override void OnMatch(string sender, string nick, string host, string filter, string message, string target)
     {
       var ip = filter;

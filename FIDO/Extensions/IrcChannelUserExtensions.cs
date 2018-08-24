@@ -10,7 +10,12 @@ namespace FIDO.Extensions
 
     public static bool IsModerator(this IrcChannelUser ircChannelUser)
     {
-      return HasAdminHostname(ircChannelUser) || HasAdminUserMode(ircChannelUser);
+      return HasAdminHostname(ircChannelUser.User) || HasAdminUserMode(ircChannelUser);
+    }
+
+    public static bool IsModerator(this IrcUser ircUser)
+    {
+      return HasAdminHostname(ircUser);
     }
 
     private static bool HasAdminUserMode(IrcChannelUser ircChannelUser)
@@ -18,9 +23,9 @@ namespace FIDO.Extensions
       return ircChannelUser.Modes.Intersect(moderatorUserModes).Any();
     }
 
-    private static bool HasAdminHostname(IrcChannelUser ircChannelUser)
+    private static bool HasAdminHostname(IrcUser ircUser)
     {
-      return moderatorHostnames.Any(h => h == ircChannelUser.User.HostName);
+      return moderatorHostnames.Any(h => h == ircUser.HostName);
     }
   }
 }
