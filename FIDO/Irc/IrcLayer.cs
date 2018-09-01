@@ -190,7 +190,7 @@ namespace FIDO.Irc
         client.SendRawMessage($"OPER {operLine} {operLinePassword}");
       }
 
-      if (!channels.Any())
+      if (channels.Any())
       {
         client.Channels.Join(channels);
       }
