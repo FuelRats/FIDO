@@ -190,7 +190,10 @@ namespace FIDO.Irc
         client.SendRawMessage($"OPER {operLine} {operLinePassword}");
       }
 
-      client.Channels.Join(channels);
+      if (!channels.Any())
+      {
+        client.Channels.Join(channels);
+      }
     }
 
     private void IrcClient_LocalUser_NoticeReceived(object sender, IrcMessageEventArgs e)
