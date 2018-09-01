@@ -31,6 +31,7 @@ namespace FIDO.Irc
     public event EventHandler<IrcMessageEventArgs> OnMessageReceived;
     public event EventHandler<IrcMessageEventArgs> OnNoticeReceived;
     public event EventHandler<IrcMessageEventArgs> OnQueryReceived;
+    public event EventHandler Connected;
     public event EventHandler Disconnected;
 
     public async Task Connect(string server, int port, bool useSsl, string nickName, string userName, string realname, List<string> channelsToJoin)
@@ -164,6 +165,7 @@ namespace FIDO.Irc
 
     private void IrcOnRegistered(object sender, EventArgs e)
     {
+      Connected?.Invoke(sender, EventArgs.Empty);
       var client = (IrcClient) sender;
 
       var noticeQueue = new BlockingCollection<IrcMessageEventArgs>();

@@ -22,6 +22,8 @@ namespace FIDO.Actions.Commands
       yield return new Fetch(irc, nexmo, configuration);
       yield return new Join(irc, nexmo, configuration);
       yield return new Part(irc, nexmo, configuration);
+      yield return new Mute(irc, nexmo, configuration);
+      yield return new Unmute(irc, nexmo, configuration);
     }
 
     protected override bool OnExecute(IrcMessageEventArgs ircMessage)

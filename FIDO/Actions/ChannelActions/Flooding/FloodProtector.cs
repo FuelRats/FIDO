@@ -1,7 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Linq;
-using System.Text.RegularExpressions;
-using FIDO.Extensions;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
@@ -11,7 +10,6 @@ namespace FIDO.Actions.ChannelActions.Flooding
 {
   public class FloodProtector : ChannelAction
   {
-    private static readonly Regex regex = new Regex(@"^!unmute (?<nick>[A-Za-z0-9_´|\[\]]+)", RegexOptions.IgnoreCase);
     private readonly ConcurrentDictionary<string, ChannelFloodProtection> channels = new ConcurrentDictionary<string, ChannelFloodProtection>();
     private readonly ConcurrentDictionary<string, ChannelMute> mutes = new ConcurrentDictionary<string, ChannelMute>();
 
@@ -23,6 +21,10 @@ namespace FIDO.Actions.ChannelActions.Flooding
     public FloodProtector(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
       : base(irc, nexmo, configuration)
     {
+      if (Instance != null) { throw new Exception("Can only instantiate one FloodProtector"); }
+
+      Instance = this;
+
       this.irc = irc;
       if (!int.TryParse(configuration["FloodProtectionRate"], out rate))
       {
@@ -40,9 +42,33 @@ namespace FIDO.Actions.ChannelActions.Flooding
       }
 
       muteDuration *= 60 * 1000; // convert minutes to milliseconds
+      irc.Connected += IrcOnConnected;
+      irc.Disconnected += IrcOnDisconnected;
     }
 
-    protected override ActionMode Mode => ActionMode.All;
+    public static FloodProtector Instance { get; private set; }
+
+    protected override ActionMode Mode => ActionMode.OnlyUsers;
+
+    public void MuteUser(IrcChannelUser ircChannelUser)
+    {
+      var mute = new ChannelMute(ircChannelUser);
+      if (mutes.TryAdd(GetKey(ircChannelUser.Channel, ircChannelUser.User), mute))
+      {
+        mute.Mute(muteDuration);
+        ReportToIrc($"MUTED {ircChannelUser.User.NickName} ({ircChannelUser.User.HostName}) has been muted for flooding in {ircChannelUser.Channel.Name}");
+        irc.Client.LocalUser.SendMessage(ircChannelUser.User, $"You have been automatically muted in {ircChannelUser.Channel.Name} for {muteDuration / 1000 / 60} minutes due to too many messages in a short period of time.");
+      }
+    }
+
+    public void UnmuteUser(IrcChannelUser ircChannelUser)
+    {
+      if (mutes.TryRemove(GetKey(ircChannelUser.Channel, ircChannelUser.User), out var mute))
+      {
+        mute.Unmute();
+        irc.Client.LocalUser.SendMessage(ircChannelUser.User, $"You have been unmuted in {ircChannelUser.Channel.Name}.");
+      }
+    }
 
     protected override bool OnExecute(IrcMessageEventArgs ircMessage)
     {
@@ -52,53 +78,48 @@ namespace FIDO.Actions.ChannelActions.Flooding
         var channel = ircMessageTarget.Name;
         var ircChannel = irc.Client.Channels.Single(x => x.Name == channel);
         var ircChannelUser = ircChannel.Users.Single(x => x.User.NickName == user);
-        if (ircChannelUser.IsModerator())
+        var channelFloodProtection = channels.GetOrAdd(channel, c => new ChannelFloodProtection(rate, per));
+        if (channelFloodProtection.ExceedsFlood(user))
         {
-          if (ircMessage.Text.StartsWith("!unmute"))
-          {
-            UnmuteUser(ircChannelUser.Channel, ircMessage);
-          }
-        }
-        else
-        {
-          var channelFloodProtection = channels.GetOrAdd(channel, c => new ChannelFloodProtection(rate, per));
-          if (channelFloodProtection.ExceedsFlood(user))
-          {
-            MuteUser(ircChannelUser);
-          }
+          MuteUser(ircChannelUser);
         }
       }
 
       return false;
     }
 
-    private void MuteUser(IrcChannelUser ircChannelUser)
+    private void IrcOnDisconnected(object sender, EventArgs e)
     {
-      var mute = new ChannelMute(ircChannelUser);
-      if (mutes.TryAdd(GetKey(ircChannelUser.Channel, ircChannelUser.User), mute))
+      foreach (var clientChannel in irc.Client.Channels)
       {
-        mute.Mute(muteDuration);
-        ReportToIrc($"MUTED {ircChannelUser.User.NickName} ({ircChannelUser.User.HostName}) has been muted for flooding in {ircChannelUser.Channel.Name}");
-        irc.Client.LocalUser.SendMessage(ircChannelUser.User, $"You have been automatically muted in ${ircChannelUser.Channel.Name} for {muteDuration / 1000 / 60} minutes due to too many messages in a short period of time.");
+        clientChannel.UserJoined -= ChannelOnUserJoined;
+      }
+
+      irc.Client.LocalUser.JoinedChannel -= LocalUserOnJoinedChannel;
+    }
+
+    private void IrcOnConnected(object sender, EventArgs e)
+    {
+      irc.Client.LocalUser.JoinedChannel += LocalUserOnJoinedChannel;
+    }
+
+    private void LocalUserOnJoinedChannel(object sender, IrcChannelEventArgs e)
+    {
+      e.Channel.UserJoined += ChannelOnUserJoined;
+    }
+
+    private void ChannelOnUserJoined(object sender, IrcChannelUserEventArgs e)
+    {
+      var ircChannelUser = e.ChannelUser;
+      if (mutes.ContainsKey(GetKey(ircChannelUser.Channel, ircChannelUser.User)))
+      {
+        ircChannelUser.DeVoice();
       }
     }
 
     private static string GetKey(IrcChannel channel, IrcUser user)
     {
       return $"{channel.Name}_{user.HostName}";
-    }
-
-    private void UnmuteUser(IrcChannel channel, IrcMessageEventArgs message)
-    {
-      var match = regex.Match(message.Text);
-      if (match.Success)
-      {
-        var user = irc.Client.Users.SingleOrDefault(x => x.NickName == match.Groups["nick"].Value);
-        if (user != null && mutes.TryRemove(GetKey(channel, user), out var mute))
-        {
-          mute.Unmute();
-        }
-      }
     }
   }
 }
