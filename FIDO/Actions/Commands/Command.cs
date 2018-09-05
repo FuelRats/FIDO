@@ -24,6 +24,7 @@ namespace FIDO.Actions.Commands
       yield return new Part(irc, nexmo, configuration);
       yield return new Mute(irc, nexmo, configuration);
       yield return new Unmute(irc, nexmo, configuration);
+      yield return new Debug(irc, nexmo, configuration);
     }
 
     protected override bool OnExecute(IrcMessageEventArgs ircMessage)

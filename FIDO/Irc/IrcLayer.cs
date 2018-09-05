@@ -228,7 +228,7 @@ namespace FIDO.Irc
     {
       foreach (var ircMessageTarget in e.Targets)
       {
-        Console.WriteLine($"Message received: {e.Text} in channel {ircMessageTarget.Name}");
+        Console.WriteLine($"{ircMessageTarget.Name} < {e.Source.Name}: {e.Text}");
         var blockingCollection = messageQueues[ircMessageTarget.Name];
         blockingCollection.Add(e);
       }
@@ -248,7 +248,7 @@ namespace FIDO.Irc
         return;
       }
 
-      Console.WriteLine("Sent: " + e.RawContent);
+      Console.WriteLine($"> {e.RawContent}");
     }
 
     private static void OnIrcOnOnError(object sender, IrcErrorEventArgs e)
