@@ -1,5 +1,6 @@
 ﻿using System.Linq;
 using System.Text.RegularExpressions;
+using FIDO.Extensions;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
@@ -9,7 +10,7 @@ namespace FIDO.Actions.Commands
 {
   public class Debug : Command
   {
-    private static readonly Regex regex = new Regex(@"!debug (?<nick>[A-Za-z0-9_´|\[\]]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex(@"^!debug (?<nick>[A-Za-z0-9_´|\[\]]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IrcLayer irc;
 
     public Debug(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
@@ -33,7 +34,7 @@ namespace FIDO.Actions.Commands
 
       var ircChannels = user.GetChannelUsers().Select(x => x).ToList();
       var channels = string.Join(", ", ircChannels.Select(x => x.Modes + x.Channel.Name));
-      ReportToIrc("User " + nick + ", hostname " + user.HostName + " is in channels: " + channels);
+      ReportToIrc($"{(user.IsModerator() ? "Moderator" : "User")}: {nick}, hostname {user.HostName} is in channels: {channels}");
     }
   }
 }
