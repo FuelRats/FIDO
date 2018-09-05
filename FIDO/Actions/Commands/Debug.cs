@@ -9,7 +9,7 @@ namespace FIDO.Actions.Commands
 {
   public class Debug : Command
   {
-    private static readonly Regex regex = new Regex(@"!debug (?<nick>[A-Za-z0-9_´|\[\]]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex(@"^!debug (?<nick>[A-Za-z0-9_´|\[\]]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IrcLayer irc;
 
     public Debug(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)

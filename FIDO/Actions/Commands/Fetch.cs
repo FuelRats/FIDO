@@ -13,7 +13,7 @@ namespace FIDO.Actions.Commands
   public class Fetch : Command
   {
     private const string url = "https://ipinfo.io/";
-    private static readonly Regex regex = new Regex("!fetch (?<message>[0-9.:A-F-a-f]*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex("^!fetch (?<message>[0-9.:A-F-a-f]*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public Fetch(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
       : base(irc, nexmo, configuration)

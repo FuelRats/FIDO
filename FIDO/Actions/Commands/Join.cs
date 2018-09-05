@@ -9,7 +9,7 @@ namespace FIDO.Actions.Commands
 {
   public class Join : Command
   {
-    private static readonly Regex regex = new Regex("!join", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex("^!join", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IrcLayer irc;
     private readonly IConfiguration configuration;
 

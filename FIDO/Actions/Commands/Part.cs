@@ -9,7 +9,7 @@ namespace FIDO.Actions.Commands
 {
   public class Part : Command
   {
-    private static readonly Regex regex = new Regex("!part", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex("^!part", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IrcLayer irc;
     private readonly IConfiguration configuration;
 
