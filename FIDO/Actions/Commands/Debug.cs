@@ -1,5 +1,6 @@
 ﻿using System.Linq;
 using System.Text.RegularExpressions;
+using FIDO.Extensions;
 using FIDO.Irc;
 using FIDO.Nexmo;
 using IrcDotNet;
@@ -33,7 +34,7 @@ namespace FIDO.Actions.Commands
 
       var ircChannels = user.GetChannelUsers().Select(x => x).ToList();
       var channels = string.Join(", ", ircChannels.Select(x => x.Modes + x.Channel.Name));
-      ReportToIrc("User " + nick + ", hostname " + user.HostName + " is in channels: " + channels);
+      ReportToIrc($"{(user.IsModerator() ? "Moderator" : "User")}: {nick}, hostname {user.HostName} is in channels: {channels}");
     }
   }
 }

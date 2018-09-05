@@ -5,7 +5,7 @@ namespace FIDO.Extensions
 {
   public static class IrcChannelUserExtensions
   {
-    private static readonly char[] moderatorUserModes = { '~', '&', '@', '%' };
+    private static readonly char[] moderatorUserModes = { '~', '&', '@', '%', 'q', 'a', 'o', 'h' };
     private static readonly string[] moderatorHostnames = { "admin.fuelrats.com", "netadmin.fuelrats.com" };
 
     public static bool IsModerator(this IrcChannelUser ircChannelUser)
