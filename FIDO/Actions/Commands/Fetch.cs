@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using FIDO.Irc;
 using FIDO.Nexmo;
@@ -52,8 +53,13 @@ namespace FIDO.Actions.Commands
     {
       public override string ToString()
       {
-        var location = string.Join(", ", new[] { City, Region, Country }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var location = string.Join(", ", new[] { City, Region, CountryCodeToFlag(Country) }.Where(x => !string.IsNullOrWhiteSpace(x)));
         return $"IP Information {Ip}: {location} ISP: {Org}";
+      }
+
+      private static string CountryCodeToFlag(string countryCode)
+      {
+        return string.Join("", Encoding.UTF8.GetBytes(countryCode.ToUpper()).Select(charCode => char.ConvertFromUtf32(charCode + 127397)));
       }
 
       // ReSharper disable MemberCanBePrivate.Local
