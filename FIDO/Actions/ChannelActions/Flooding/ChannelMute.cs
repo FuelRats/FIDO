@@ -57,7 +57,7 @@ namespace FIDO.Actions.ChannelActions.Flooding
 
     private void UnmuteTimerOnElapsed(object sender, ElapsedEventArgs e)
     {
-      Unmute();
+      FloodProtector.Instance.UnmuteUser(ircChannelUser);
     }
   }
 }
