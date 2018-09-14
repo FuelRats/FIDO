@@ -8,7 +8,7 @@ namespace FIDO.Actions.NoticeActions
 {
   public class SpamFilter : NoticeAction
   {
-    private static readonly Regex regex = new Regex(@"\[Spamfilter\] (?<nick>[A-Za-z0-9_´|\[\]]*)!(?<user>[A-Za-z0-9_´|\[\]]*)@(?<host>[A-Za-z0-9._\-]*) matches filter '(?<filter>.*)': \[(?<message>[A-Za-z0-9]* (?<target>[A-Za-z0-9#_`\[\]]*):.*)]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex(@"\[Spamfilter\] (?<nick>[A-Za-z0-9_´|\[\]]*)!(?<user>[A-Za-z0-9_´|\[\]]*)@(?<host>[A-Za-z0-9.:_\-]*) matches filter '(?<filter>.*)': \[(?<message>[A-Za-z0-9]* (?<target>[A-Za-z0-9#_`\[\]]*):.*)]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public SpamFilter(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
       : base(irc, nexmo, configuration)
