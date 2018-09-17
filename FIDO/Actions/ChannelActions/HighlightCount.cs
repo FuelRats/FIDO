@@ -26,7 +26,7 @@ namespace FIDO.Actions.ChannelActions
     protected override bool OnExecute(IrcMessageEventArgs ircMessage)
     {
       var words = split.Split(ircMessage.Text);
-      var highlightCount = words.Select(GetUser).Count(x => x != null);
+      var highlightCount = words.Select(GetUser).Distinct().Count(x => x != null);
 
       if (highlightCount >= maxHighlightCount)
       {
