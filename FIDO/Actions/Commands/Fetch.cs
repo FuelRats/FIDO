@@ -54,7 +54,7 @@ namespace FIDO.Actions.Commands
       public override string ToString()
       {
         var location = string.Join(", ", new[] { City, Region, CountryCodeToFlag(Country) }.Where(x => !string.IsNullOrWhiteSpace(x)));
-        return $"IP Information {Ip}: {location} ISP: {Org}";
+        return $"IP Information {Ip}: {location} ({Country}) ISP: {Org}";
       }
 
       private static string CountryCodeToFlag(string countryCode)
