@@ -23,13 +23,13 @@ namespace FIDO
       fido = new Fido(configuration);
       fido.Disconnected += FidoOnDisconnected;
       await RunFido();
-
-      Console.ReadKey();
     }
 
     private static void AppDomainOnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-      Console.WriteLine(e.ExceptionObject);
+      Console.WriteLine("Exception raised, runtime {1}, error: {0}", e.ExceptionObject, e.IsTerminating ? "terminating" : "intact");
+      run = false;
+      manualResetEvent.Set();
     }
 
     private static async Task RunFido()
