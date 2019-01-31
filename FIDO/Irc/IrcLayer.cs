@@ -17,6 +17,7 @@ namespace FIDO.Irc
     private readonly Dictionary<string, BlockingCollection<IrcMessageEventArgs>> messageQueues = new Dictionary<string, BlockingCollection<IrcMessageEventArgs>>();
     private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
     private readonly IList<Task> messageDispatchers = new List<Task>();
+    private readonly bool logMessages;
 
     private StandardIrcClient irc;
     private List<string> channels;
@@ -24,6 +25,7 @@ namespace FIDO.Irc
     public IrcLayer(IConfiguration configuration)
     {
       this.configuration = configuration;
+      bool.TryParse(configuration["LogMessages"], out logMessages);
     }
 
     public IrcClient Client => irc;
@@ -198,7 +200,11 @@ namespace FIDO.Irc
 
     private void IrcClient_LocalUser_NoticeReceived(object sender, IrcMessageEventArgs e)
     {
-      Console.WriteLine($"Notice received: {e.Text}");
+      if (logMessages)
+      {
+        Console.WriteLine($"Notice received: {e.Text}");
+      }
+
       messageQueues["Notice"].Add(e);
     }
 
@@ -228,7 +234,11 @@ namespace FIDO.Irc
     {
       foreach (var ircMessageTarget in e.Targets)
       {
-        Console.WriteLine($"{ircMessageTarget.Name} < {e.Source.Name}: {e.Text}");
+        if (logMessages)
+        {
+          Console.WriteLine($"{ircMessageTarget.Name} < {e.Source.Name}: {e.Text}");
+        }
+
         var blockingCollection = messageQueues[ircMessageTarget.Name];
         blockingCollection.Add(e);
       }
@@ -236,24 +246,31 @@ namespace FIDO.Irc
 
     private void IrcClient_LocalUser_MessageReceived(object sender, IrcMessageEventArgs e)
     {
-      Console.WriteLine($"Query received: {e.Text} from {e.Source.Name}");
+      if (logMessages)
+      {
+        Console.WriteLine($"Query received: {e.Text} from {e.Source.Name}");
+      }
+
       var blockingCollection = messageQueues["Query"];
       blockingCollection.Add(e);
     }
 
-    private static void IrcOnRawMessageSent(object sender, IrcRawMessageEventArgs e)
+    private void IrcOnRawMessageSent(object sender, IrcRawMessageEventArgs e)
     {
       if (e == null || e.RawContent.Contains("nickserv"))
       {
         return;
       }
 
-      Console.WriteLine($"> {e.RawContent}");
+      if (logMessages)
+      {
+        Console.WriteLine($"> {e.RawContent}");
+      }
     }
 
     private static void OnIrcOnOnError(object sender, IrcErrorEventArgs e)
     {
-      Console.WriteLine("Error: " + e.Error);
+      Console.WriteLine("Received unhandled irc library error: " + e.Error);
     }
   }
 }
