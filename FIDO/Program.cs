@@ -29,6 +29,7 @@ namespace FIDO
     {
       Console.WriteLine("Exception raised, runtime {1}, error: {0}", e.ExceptionObject, e.IsTerminating ? "terminating" : "intact");
       run = false;
+      fido.Disconnected -= FidoOnDisconnected;
       manualResetEvent.Set();
     }
 
