@@ -271,6 +271,7 @@ namespace FIDO.Irc
     private static void OnIrcOnOnError(object sender, IrcErrorEventArgs e)
     {
       Console.WriteLine("Received unhandled irc library error: " + e.Error);
+      Environment.Exit(-1);
     }
   }
 }
