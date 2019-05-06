@@ -8,7 +8,7 @@ namespace FIDO.Actions.NoticeActions
 {
   public class BanFilter : NoticeAction
   {
-    private static readonly Regex regex = new Regex("(?<message>Global [A-Z]*:Line added .*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex("(?<message>Global [A-Z]*:Line added .*)|(?<message>[A-Z]*:Line added .*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public BanFilter(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
       : base(irc, nexmo, configuration)
