@@ -1,3 +1,4 @@
+zope
 sqlalchemy
 requests
 pydle
