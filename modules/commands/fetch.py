@@ -2,7 +2,6 @@ from typing import List
 from config import IRC
 import requests
 import ipaddress
-
 import fido
 
 
@@ -17,7 +16,6 @@ async def invoke(bot: fido, args: List[str]):
     if len(args) == 0:
         return "Usage: " + IRC.commandPrefix + "fetch <ip adress1> [<ip address2> <ip address3> ...]"
 
-    answer = ""
     lines = []
     for arg in args:
         try:
