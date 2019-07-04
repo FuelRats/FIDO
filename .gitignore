@@ -1,3 +1,4 @@
 # All we actually need for pycharm/python
 .idea/
 venv/
+FIDO.log
