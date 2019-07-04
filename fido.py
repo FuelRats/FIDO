@@ -48,6 +48,8 @@ class FIDO(pydle.Client):
         await noticehandler.handle_notice(self, message)
         return
 
+    def colour_red(self, message:str):
+        return f"\u000304{message}\u000f"
 
 if __name__ == '__main__':
     client = FIDO(IRC.nickname)

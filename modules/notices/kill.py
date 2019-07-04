@@ -20,5 +20,5 @@ async def on_kill(bot: fido, message: str, match):
     host = match.group('host')
     sender = match.group('sender')
     reason = match.group('reason')
-    # .WrapWithColour(Colours.LightRed)
-    await bot.message("#opers", f"\u000304KILL\u000f {nick} ({host}) was killed by {sender} with message: {reason}")
+    await bot.message("#opers",
+                      f"{bot.colour_red('KILL')} {nick} ({host}) was killed by {sender} with message: {reason}")
