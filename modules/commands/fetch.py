@@ -25,15 +25,18 @@ async def invoke(bot: fido, args: List[str]):
 
         response = requests.get('https://ipinfo.io/' + arg, headers={'Accept': 'application/json'}).json()
         location = []
-        if response['city'] != '':
+        if 'city' in response and response['city'] != '':
             location.append(response['city'])
-        if response['region'] != '':
+        if 'region' in response and response['region'] != '':
             location.append(response['region'])
-        country = response['country']
-        flag = chr(ord(country[0]) + 127397) + chr(ord(country[1]) + 127397)
-        location.append(f"{flag} ({country})")
+        if 'country' in response:
+            country = response['country']
+            flag = chr(ord(country[0]) + 127397) + chr(ord(country[1]) + 127397)
+            location.append(f"{flag} ({country})")
+        if len(location) == 0:
+            location.append("Unknown Location")
         location = ", ".join(location)
-        lines.append(f"IP Information {response['ip']}: {location} ISP: {response['org']}" +
+        lines.append(f"IP Information {response['ip']}: {location} ISP: {response['org'] if 'org' in response else 'Unknown'}" +
                      (f" Hostname: {response['hostname']}" if 'hostname' in response else ""))
 
     answer = "\r\n".join(lines)
