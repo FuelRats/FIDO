@@ -31,7 +31,7 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_message(self, target, nick, message):
         await super().on_message(target, nick, message)
-        logging.DEBUG("got message:", message, "from", nick, "with target", target)
+        logging.DEBUG(f"got message: {message} from {nick} with target {target}")
         # print("assuming my username is", self.nickname)
         reply = commandHandler.handleCommand(message)
         if reply:
