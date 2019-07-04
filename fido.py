@@ -1,5 +1,5 @@
 import pydle
-import time, request
+import time, requests
 from config import IRC
 
 
