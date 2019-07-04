@@ -7,6 +7,7 @@ import modules.commandhandler as commandHandler
 import logging
 
 from config import IRC, Logging
+from modules import noticehandler
 
 pool = pydle.ClientPool()
 
@@ -38,6 +39,13 @@ class FIDO(pydle.Client):
         reply = await commandHandler.handle_command(self, message)
         if reply:
             await self.message(target if target != self.nickname else nick, reply)
+        return
+
+    @pydle.coroutine
+    async def on_notice(self, target, nick, message):
+        await super().on_notice(target, nick, message)
+        logging.debug(f"target: {target}, nick: {nick}, message: {message}")
+        await noticehandler.handle_notice(self, message)
         return
 
 
