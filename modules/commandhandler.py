@@ -13,6 +13,7 @@ commandsDict = {
 async def handle_command(bot: fido, message: str):
     """
     General Message Handler
+    :param bot: bot instance
     :param message: The Message received
     :return: the reply to be sent to the sender
     """
