@@ -1,24 +1,31 @@
 import pydle
-import time, requests
+import time, requests, threading
 from config import IRC
+
+pool = pydle.ClientPool()
 
 
 class FIDO(pydle.Client):
 
-    def on_connect(self):
-        super().on_connect()
+    @pydle.coroutine
+    async def on_connect(self):
+        print("test?")
+        await super().on_connect()
         print("Connected!")
-        self.join(IRC.channel)
-
-    def on_join(self, channel, user):
-        super().on_join(channel, user)
+        await self.join(IRC.channel)
 
     @pydle.coroutine
-    def on_raw(self, message):
-        super().on_raw(message)
+    async def on_join(self, channel, user):
+        await super().on_join(channel, user)
+
+    @pydle.coroutine
+    async def on_raw(self, message):
+        await super().on_raw(message)
+        print(message)
 
 
 if __name__ == '__main__':
     client = FIDO(IRC.nickname)
-    client.connect(IRC.server)
-    client.handle_forever()
+    pool.connect(client, IRC.server, IRC.port, tls=IRC.useSsl)
+    thread = threading.Thread(target=pool.handle_forever)
+    thread.start()
