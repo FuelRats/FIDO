@@ -1,5 +1,7 @@
 import pydle
 import time, requests, threading
+import sqlalchemy
+
 from config import IRC
 
 pool = pydle.ClientPool()
