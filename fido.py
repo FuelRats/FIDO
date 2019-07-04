@@ -1,3 +1,5 @@
+import sys
+
 import pydle
 import time, requests, threading
 import sqlalchemy
@@ -16,7 +18,7 @@ class FIDO(pydle.Client):
     async def on_connect(self):
         logging.debug("test?")
         await super().on_connect()
-        logging.INFO("Connected!")
+        logging.info("Connected!")
         await self.join(IRC.channel)
 
     @pydle.coroutine
@@ -26,14 +28,14 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_raw(self, message):
         await super().on_raw(message)
-        logging.DEBUG(message)
+        logging.debug(message)
 
     @pydle.coroutine
     async def on_message(self, target, nick, message):
         await super().on_message(target, nick, message)
-        logging.DEBUG(f"got message: {message} from {nick} with target {target}")
+        logging.debug(f"got message: {message} from {nick} with target {target}")
         # print("assuming my username is", self.nickname)
-        reply = commandHandler.handleCommand(message)
+        reply = await commandHandler.handle_command(self, message)
         if reply:
             await self.message(target if target != self.nickname else nick, reply)
         return

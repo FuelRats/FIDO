@@ -1,11 +1,16 @@
+import fido
 from config import IRC
-from modules.commands import fetch
+from modules.commands import fetch, channels
 
 
-commandsDict = {"fetch": fetch.invoke}
+commandsDict = {
+        "fetch": fetch.invoke,
+        "join": channels.join_channel,
+        "part": channels.part_channel
+    }
 
 
-def handleCommand(message: str):
+async def handle_command(bot: fido, message: str):
     """
     General Message Handler
     :param message: The Message received
@@ -18,7 +23,7 @@ def handleCommand(message: str):
 
         # Start Commands
         if command in commandsDict:
-            return commandsDict[command](arguments)
+            return await commandsDict[command](bot, arguments)
         else:
             return False
             # TODO: tell about unknown command if in DM
