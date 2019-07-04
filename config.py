@@ -4,3 +4,4 @@ class IRC:
     port = 6697
     useSsl = True
     nickname = 'FIDO-dev'
+    commandPrefix = '!'

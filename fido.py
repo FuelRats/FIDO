@@ -1,6 +1,7 @@
 import pydle
 import time, requests, threading
 import sqlalchemy
+import modules.commandHandler as commandHandler
 
 from config import IRC
 
@@ -24,6 +25,16 @@ class FIDO(pydle.Client):
     async def on_raw(self, message):
         await super().on_raw(message)
         print(message)
+
+    @pydle.coroutine
+    async def on_message(self, target, nick, message):
+        await super().on_message(target, nick, message)
+        print("got message:", message, "from", nick, "with target", target)
+        # print("assuming my username is", self.nickname)
+        reply = commandHandler.handleCommand(message)
+        if reply:
+            await self.message(target if target != self.nickname else nick, reply)
+        return
 
 
 if __name__ == '__main__':
