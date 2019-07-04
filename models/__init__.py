@@ -2,7 +2,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import configure_mappers
 
-from zope.sqlalchemy
+import transaction
 
 configure_mappers()
 
@@ -17,7 +17,7 @@ def get_session_factory(engine):
     return factory
 
 
-def get_tm_session(session_factory, transaction_manager):
+def get_tm_session(session_factory):
     """
     Get a ``sqlalchemy.orm.Session`` instance backed by a transaction.
 
@@ -39,7 +39,5 @@ def get_tm_session(session_factory, transaction_manager):
 
     """
     dbsession = session_factory()
-    zope.sqlalchemy.register(
-        dbsession, transaction_manager=transaction_manager)
     return dbsession
 
