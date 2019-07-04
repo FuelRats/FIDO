@@ -13,7 +13,6 @@ async def handle_notice(bot: fido, message: str):
     General Notice Handler
     :param bot: bot instance
     :param message: The Message received
-    :return: the reply to be sent to the sender
     """
 
     for key in noticesDict:
