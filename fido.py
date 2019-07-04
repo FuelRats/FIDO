@@ -10,7 +10,7 @@ from config import IRC, Logging
 
 pool = pydle.ClientPool()
 
-logging.basicConfig(filename=Logging.filename, level=Logging.level)
+logging.basicConfig(stream=sys.stdout, level=Logging.level)
 
 class FIDO(pydle.Client):
 
