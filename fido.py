@@ -19,6 +19,7 @@ class FIDO(pydle.Client):
         logging.debug("test?")
         await super().on_connect()
         logging.info("Connected!")
+        await self.raw(f"OPER {IRC.operline} {IRC.operlinePassword}\r\n")  # DO NOT REMOVE NEWLINE!!!!!!!
         await self.join(IRC.channel)
 
     @pydle.coroutine
