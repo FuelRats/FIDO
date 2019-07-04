@@ -1,5 +1,7 @@
 import pydle
 import time, requests
+import sqlalchemy
+
 from config import IRC
 
 
