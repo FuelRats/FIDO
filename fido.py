@@ -1,7 +1,7 @@
 import pydle
 import time, requests, threading
 import sqlalchemy
-import modules.commandHandler as commandHandler
+import modules.commandhandler as commandHandler
 
 from config import IRC
 
