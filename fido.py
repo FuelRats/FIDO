@@ -28,7 +28,6 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_raw(self, message):
         await super().on_raw(message)
-        logging.debug(message)
 
     @pydle.coroutine
     async def on_message(self, target, nick, message):
