@@ -1,3 +1,5 @@
+import logging
+
 class IRC:
     channel = '#adadev'
     server = 'irc.fuelrats.com'
@@ -5,3 +7,8 @@ class IRC:
     useSsl = True
     nickname = 'FIDO-dev'
     commandPrefix = '!'
+
+
+class Logging:
+    filename = 'FIDO.log'
+    level = logging.DEBUG
