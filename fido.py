@@ -22,7 +22,6 @@ class FIDO(pydle.Client):
 
     @pydle.coroutine
     async def on_connect(self):
-        logging.debug("test?")
         await super().on_connect()
         logging.info("Connected!")
         await self.raw(f"OPER {IRC.operline} {IRC.operlinePassword}\r\n")  # DO NOT REMOVE NEWLINE!!!!!!!
@@ -39,8 +38,6 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_message(self, target, nick, message):
         await super().on_message(target, nick, message)
-        logging.debug(f"got message: {message} from {nick} with target {target}")
-        # print("assuming my username is", self.nickname)
         reply = await commandHandler.handle_command(self, message)
         if reply:
             await self.message(target if target != self.nickname else nick, reply)
@@ -53,8 +50,10 @@ class FIDO(pydle.Client):
         await noticehandler.handle_notice(self, message)
         return
 
-    def colour_red(self, message:str):
+    @staticmethod
+    def colour_red(message:str):
         return f"\u000304{message}\u000f"
+
 
 if __name__ == '__main__':
     client = FIDO(IRC.nickname)
