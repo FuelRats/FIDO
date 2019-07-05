@@ -2,7 +2,6 @@ import logging
 
 
 class IRC:
-    channel = '#adadev'
     server = '192.168.1.21'
     port = 6697
     useSsl = True

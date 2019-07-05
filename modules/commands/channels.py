@@ -1,6 +1,7 @@
 from typing import List
 
 import fido
+from models import SessionManager, config
 
 
 async def join_channel(bot: fido, args: List[str]):
@@ -10,11 +11,15 @@ async def join_channel(bot: fido, args: List[str]):
     :param args: Arguments passed to the command by the user
     :return: The reply message
     """
+    session = SessionManager().session
     channels: List[str] = []
     for arg in args:
         if arg.startswith('#'):
             channels.append(arg)
             await bot.join(arg)
+            channel = config.Config(module='channels', key='join', value=arg)
+            session.add(channel)
+    session.commit()
     return f"Joined: {', '.join(channels)}."
 
 
@@ -25,9 +30,12 @@ async def part_channel(bot: fido, args: List[str]):
     :param args: Arguments passed to the command by the user
     :return: The reply message
     """
+    session = SessionManager().session
     channels: List[str] = []
     for arg in args:
         if arg.startswith('#'):
             channels.append(arg)
             await bot.part(arg)
+            session.query(config.Config).filter_by(module='channels', key='join', value=arg).delete()
+    session.commit()
     return f"Parted: {', '.join(channels)}."

@@ -11,6 +11,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from config import IRC, Logging, SQLAlchemy
+from models import SessionManager, config
+from models.config import Config
 from modules import noticehandler
 
 pool = pydle.ClientPool()
@@ -25,7 +27,11 @@ class FIDO(pydle.Client):
         await super().on_connect()
         logging.info("Connected!")
         await self.raw(f"OPER {IRC.operline} {IRC.operlinePassword}\r\n")  # DO NOT REMOVE NEWLINE!!!!!!!
-        await self.join(IRC.channel)
+
+        # Join remembered channels
+        session = SessionManager().session
+        for result in session.query(config.Config).filter_by(module='channels', key='join'):
+            await self.join(result.value)
 
     @pydle.coroutine
     async def on_join(self, channel, user):
@@ -51,7 +57,7 @@ class FIDO(pydle.Client):
         return
 
     @staticmethod
-    def colour_red(message:str):
+    def colour_red(message: str):
         return f"\u000304{message}\u000f"
 
 

@@ -2,3 +2,4 @@
 .idea/
 venv/
 FIDO.log
+*.sqlite
