@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from config import IRC, Logging, SQLAlchemy
 from models import SessionManager, config
 from models.config import Config
-from modules import noticehandler
+from modules import noticehandler, channelprotectionhandler
 
 pool = pydle.ClientPool()
 
@@ -21,6 +21,7 @@ logging.basicConfig(stream=sys.stdout, level=Logging.level)
 
 
 class FIDO(pydle.Client):
+    operchannel: str = None
 
     @pydle.coroutine
     async def on_connect(self):
@@ -47,6 +48,10 @@ class FIDO(pydle.Client):
         reply = await commandHandler.handle_command(self, message)
         if reply:
             await self.message(target if target != self.nickname else nick, reply)
+
+        if target != self.nickname:
+            await channelprotectionhandler.handle_message(self, target, nick, message)
+
         return
 
     @pydle.coroutine
@@ -59,6 +64,12 @@ class FIDO(pydle.Client):
     @staticmethod
     def colour_red(message: str):
         return f"\u000304{message}\u000f"
+
+    def get_oper_channel(self):
+        if self.operchannel is None:
+            session = SessionManager().session
+        self.operchannel = session.query(config.Config).filter_by(module='channels', key='operchannel')[0].value
+        return self.operchannel
 
 
 if __name__ == '__main__':
