@@ -8,6 +8,6 @@ class IRCSessions(Base):
     timestamp = Column(DateTime)
     nickname = Column(String)
     hostmask = Column(String)
-
+    network = Column(String)
 
 Index('ircsessions_idx', IRCSessions.id, unique=True)
