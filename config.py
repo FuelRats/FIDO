@@ -1,5 +1,6 @@
 import logging
 
+
 class IRC:
     channel = '#adadev'
     server = '192.168.1.21'
@@ -14,3 +15,7 @@ class IRC:
 class Logging:
     filename = 'FIDO.log'
     level = logging.DEBUG
+
+
+class SQLAlchemy:
+    url = 'sqlite:///FIDO.sqlite'

@@ -1,6 +1,10 @@
-from sqlalchemy import create_engine, MetaData
-from ..models import *
+from sqlalchemy import create_engine
+from models.meta import Base
+from config import SQLAlchemy
 
-engine = create_engine('sqlite:///fido.db', echo=True)
-meta = MetaData()
-meta.create_all(engine)
+from models import ircsessions, config
+
+engine = create_engine(SQLAlchemy.url, echo=True)
+
+Base.metadata.create_all(engine)
+

@@ -2,16 +2,21 @@ import sys
 
 import pydle
 import time, requests, threading
-import sqlalchemy
 import modules.commandhandler as commandHandler
 import logging
 
-from config import IRC, Logging
+import modules.sessiontracker as sessiontracker
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from config import IRC, Logging, SQLAlchemy
 from modules import noticehandler
 
 pool = pydle.ClientPool()
 
 logging.basicConfig(stream=sys.stdout, level=Logging.level)
+
 
 class FIDO(pydle.Client):
 

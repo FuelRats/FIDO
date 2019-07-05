@@ -1,10 +1,13 @@
-from sqlalchemy import Table, Column, Integer, String, MetaData
-meta = MetaData()
+from sqlalchemy import Index, Column, Integer, String
+from .meta import Base
 
-config = Table(
-    'config', meta,
-    Column('id', Integer, primary_key=True),
-    Column('module', String),
-    Column('key', String),
-    Column('value', String),
-)
+
+class Config(Base):
+    __tablename__ = 'config'
+    id = Column(Integer, primary_key=True, auto_increment=True)
+    module = Column(String)
+    key = Column(String)
+    value = Column(String)
+
+
+Index('config_idx', Config.id, unique=True)
