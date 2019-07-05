@@ -21,6 +21,7 @@ logging.basicConfig(stream=sys.stdout, level=Logging.level)
 
 
 class FIDO(pydle.Client):
+    operchannel: str = None
 
     @pydle.coroutine
     async def on_connect(self):
@@ -59,6 +60,12 @@ class FIDO(pydle.Client):
     @staticmethod
     def colour_red(message: str):
         return f"\u000304{message}\u000f"
+
+    def get_oper_channel(self):
+        if self.operchannel is None:
+            session = SessionManager().session
+        self.operchannel = session.query(config.Config).filter_by(module='channels', key='operchannel')[0].value
+        return self.operchannel
 
 
 if __name__ == '__main__':
