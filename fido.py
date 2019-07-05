@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from config import IRC, Logging, SQLAlchemy
 from models import SessionManager, config
 from models.config import Config
-from modules import noticehandler
+from modules import noticehandler, channelprotectionhandler
 
 pool = pydle.ClientPool()
 
@@ -48,6 +48,10 @@ class FIDO(pydle.Client):
         reply = await commandHandler.handle_command(self, message)
         if reply:
             await self.message(target if target != self.nickname else nick, reply)
+
+        if target != self.nickname:
+            await channelprotectionhandler.handle_message(self, target, nick, message)
+
         return
 
     @pydle.coroutine
