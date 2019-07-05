@@ -14,13 +14,13 @@ async def join_channel(bot: fido, args: List[str]):
     session = SessionManager().session
     channels: List[str] = []
     for arg in args:
-        if arg.startswith('#'):
+        if arg.startswith('#') and arg not in bot.channels:
             channels.append(arg)
             await bot.join(arg)
             channel = config.Config(module='channels', key='join', value=arg)
             session.add(channel)
     session.commit()
-    return f"Joined: {', '.join(channels)}."
+    return f"Joined: {', '.join(channels)}." if len(channels) > 0 else None
 
 
 async def part_channel(bot: fido, args: List[str]):
@@ -33,9 +33,9 @@ async def part_channel(bot: fido, args: List[str]):
     session = SessionManager().session
     channels: List[str] = []
     for arg in args:
-        if arg.startswith('#'):
+        if arg.startswith('#') and arg in bot.channels:
             channels.append(arg)
             await bot.part(arg)
             session.query(config.Config).filter_by(module='channels', key='join', value=arg).delete()
     session.commit()
-    return f"Parted: {', '.join(channels)}."
+    return f"Parted: {', '.join(channels)}." if len(channels) > 0 else None
