@@ -8,7 +8,7 @@ namespace FIDO.Actions.NoticeActions
 {
   public class ExpireFilter : NoticeAction
   {
-    private static readonly Regex regex = new Regex("(?<message>Expiring Global [A-Z]*:Line .*)|(?<message>Expiring [A-Z]*:Line .*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex regex = new Regex("(?<message>Expiring Global [A-Z]*-Line .*)|(?<message>Expiring [A-Z]*-Line .*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public ExpireFilter(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
       : base(irc, nexmo, configuration)
