@@ -4,7 +4,7 @@ import fido
 from models import SessionManager, config
 
 
-async def join_channel(bot: fido, args: List[str]):
+async def join_channel(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !join command
     :param bot: bot instance
@@ -23,7 +23,7 @@ async def join_channel(bot: fido, args: List[str]):
     return f"Joined: {', '.join(channels)}." if len(channels) > 0 else None
 
 
-async def part_channel(bot: fido, args: List[str]):
+async def part_channel(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !part command
     :param bot: bot instance

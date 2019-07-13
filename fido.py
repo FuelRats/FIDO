@@ -45,7 +45,7 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_message(self, target, nick, message):
         await super().on_message(target, nick, message)
-        reply = await commandHandler.handle_command(self, message)
+        reply = await commandHandler.handle_command(self, target, nick, message)
         if reply:
             await self.message(target if target != self.nickname else nick, reply)
 

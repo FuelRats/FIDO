@@ -3,9 +3,11 @@ from config import IRC
 import requests
 import ipaddress
 import fido
+from modules.access import require_permission
 
 
-async def invoke(bot: fido, args: List[str]):
+@require_permission(4, 'DENIED!')
+async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !fetch command
     :param bot: bot instance
