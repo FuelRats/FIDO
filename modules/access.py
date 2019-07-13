@@ -24,6 +24,8 @@ def require_permission(level: int, above: bool = True, message: str = None):
     def actual_decorator(function):
         @functools.wraps(function)
         async def guarded(bot: fido, channel: str, nick: str, *args, **kwargs):
+            if channel not in bot.channels:
+                return None
             modes = bot.channels[channel]['modes']
             maxlevel: int = 0
             for mode in modes:
