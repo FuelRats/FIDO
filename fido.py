@@ -43,23 +43,21 @@ class FIDO(pydle.Client):
         await super().on_raw(message)
 
     @pydle.coroutine
-    async def on_message(self, target, nick, message):
-        await super().on_message(target, nick, message)
-        reply = await commandHandler.handle_command(self, target, nick, message)
-        if reply:
-            await self.message(target if target != self.nickname else nick, reply)
+    async def on_channel_message(self, target, nick, message):
+        await super().on_channel_message(target, nick, message)
+        await channelprotectionhandler.handle_message(self, target, nick, message)
+        await commandHandler.on_channel_message(self, target, nick, message)
 
-        if target != self.nickname:
-            await channelprotectionhandler.handle_message(self, target, nick, message)
-
-        return
+    @pydle.coroutine
+    async def on_private_message(self, target, nick, message):
+        await super().on_private_message(self, target, nick, message)
+        await commandHandler.on_private_message(self, nick, message)
 
     @pydle.coroutine
     async def on_notice(self, target, nick, message):
         await super().on_notice(target, nick, message)
         logging.debug(f"target: {target}, nick: {nick}, message: {message}")
         await noticehandler.handle_notice(self, message)
-        return
 
     @staticmethod
     def colour_red(message: str):
@@ -68,7 +66,7 @@ class FIDO(pydle.Client):
     def get_oper_channel(self):
         if self.operchannel is None:
             session = SessionManager().session
-        self.operchannel = session.query(config.Config).filter_by(module='channels', key='operchannel')[0].value
+            self.operchannel = session.query(config.Config).filter_by(module='channels', key='operchannel')[0].value
         return self.operchannel
 
 

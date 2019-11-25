@@ -42,4 +42,4 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
                      (f" Hostname: {response['hostname']}" if 'hostname' in response else ""))
 
     answer = "\r\n".join(lines)
-    return answer
+    await bot.message(channel, answer)
