@@ -1,11 +1,12 @@
 import re
 
 import fido
-from modules.notices import kill, connect
+from modules.notices import kill, connect, oper
 
 noticesDict = {
     kill.regex: kill.on_kill,
-    connect.regex: connect.on_connect
+    connect.regex: connect.on_connect,
+    oper.regex: oper.on_oper_fail
 }
 
 
