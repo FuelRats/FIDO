@@ -18,3 +18,7 @@ class Logging:
 
 class SQLAlchemy:
     url = 'sqlite:///FIDO.sqlite'
+
+
+class SessionHandler:
+    retention_time = 90

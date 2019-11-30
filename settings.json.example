@@ -27,5 +27,5 @@
   "MaxHighlightCount": 5,
   "KillReason": "You must not attempt to disrupt the IRC servers, services or the servers they run on, including but not limited to DDoS attacks, attempts to gain privileges, flooding or otherwise interfering with the service(s).",
 
-  "LogMessages": false 
+  "LogMessages": false
 }

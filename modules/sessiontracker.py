@@ -1,7 +1,11 @@
+import time
+
 import fido, datetime, ipaddress
 
 from models import SessionManager
 from models import ircsessions
+from config import SessionHandler
+
 from sqlalchemy import or_
 
 
@@ -55,7 +59,14 @@ def is_clone(nickname, hostmask):
     else:
         session.add(client)
         session.commit()
-        # TODO: Implement clearing records older than <session_retain_limit> here.
+        retention_time: int = int(SessionHandler.retention_time)
+        timeout = time.time() - (60*60*24*retention_time)
+        oldrecords = session.query(ircsessions.IRCSessions).\
+            filter(ircsessions.IRCSessions.timestamp < timeout)
+        if oldrecords.count() > 0:
+            print(f"Deleting {oldrecords.count()} old sessions.")
+            session.query(ircsessions.IRCSessions). \
+                filter(ircsessions.IRCSessions.timestamp < timeout).delete()
         return None
 
 
