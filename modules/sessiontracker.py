@@ -5,15 +5,14 @@ from models import ircsessions
 from sqlalchemy import or_
 
 
-async def check_clone(bot: fido, nickname, hostmask):
+def is_clone(nickname, hostmask):
     """
-    Handle connection notifications and store sessions.
+    Checks whether a nickname is considered a clone by the bot.
+    :param hostmask: Hostmask of user
     :param bot: bot instance
     :param nickname: Nickname of user
-    :param hostmask: Hostmask (Or rather just IP) of user
-    :return: Nothing.
+    :return: A list of nicknames previously used if the user is a clone, or None.
     """
-
     sessionmanager = SessionManager()
     session = sessionmanager.session
     timestamp = datetime.datetime.now()
@@ -50,9 +49,41 @@ async def check_clone(bot: fido, nickname, hostmask):
         if clonenicks:
             set_unique = set(clonenicks)
             clones = list(set_unique)
-            await bot.message("#opers",
-                              f"{bot.colour_red('CLONE')} {nickname} has connected from {hostmask}, "
-                              f"previous nicknames: {', '.join(clones)}")
+            return clones
+        else:
+            return None
     else:
         session.add(client)
         session.commit()
+        # TODO: Implement clearing records older than <session_retain_limit> here.
+        return None
+
+
+async def check_clone(bot: fido, nickname, hostmask):
+    """
+    Handle connection notifications and store sessions.
+    :param bot: bot instance
+    :param nickname: Nickname of user
+    :param hostmask: Hostmask (Or rather just IP) of user
+    :return: Nothing.
+    """
+
+    clonenicks = check_clone(nickname, hostmask)
+    if clonenicks is not None:
+        set_unique = set(clonenicks)
+        clones = list(set_unique)
+        await bot.message("#opers",
+                          f"{bot.colour_red('CLONE')} {nickname} has connected from {hostmask}, "
+                          f"previous nicknames: {', '.join(clones)}")
+
+
+async def get_clones(bot: fido, nickname, hostmask):
+    """
+    Check whether a nickname is registered as a clone in the DB.
+    :param bot: bot instance
+    :param nickname: Nickname of user
+    :param hostmask: Hostmask (or IP) of user
+    :return: A list of previous clone names, or None
+    """
+
+    return check_clone(nickname, hostmask)
