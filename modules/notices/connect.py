@@ -3,7 +3,9 @@ import fido
 from modules import sessiontracker
 
 regex = re.compile(
-    '.* (Client connecting: (?P<nick>[A-Za-z0-9_´|\[\]]*) \((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) \[(?P<filter>[0-9.:A-F-a-f]*)\])',
+    '.* (Client connecting: (?P<nick>[A-Za-z0-9_´|\[\]]*) '
+    '\((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\)'
+    ' \[(?P<filter>[0-9.:A-F-a-f]*)\])',
     re.I)
 
 

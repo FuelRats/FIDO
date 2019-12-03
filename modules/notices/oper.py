@@ -1,7 +1,9 @@
 import re
 import fido
 
-regex = re.compile('.* Failed OPER attempt by (?P<nick>[A-Za-z0-9_´|\[\]]*) \((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) \[(?P<reason>[0-9.:A-F-a-f]*)\]')
+regex = re.compile('.* Failed OPER attempt by (?P<nick>[A-Za-z0-9_´|\[\]]*) '
+                   '\((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) '
+                   '\[(?P<reason>[0-9.:A-F-a-f]*)\]')
 
 
 async def on_oper_fail(bot: fido, match):

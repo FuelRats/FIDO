@@ -4,7 +4,7 @@ from modules.channelprotections import masshighlighting
 protections = [masshighlighting.on_message]
 
 
-async def handle_message(bot: fido, channel: str, sender:str, message: str):
+async def handle_message(bot: fido, channel: str, sender: str, message: str):
     """
     General Channel Protection Handler
     :param bot: bot instance

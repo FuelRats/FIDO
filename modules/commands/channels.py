@@ -37,7 +37,8 @@ async def part_channel(bot: fido, channel: str, sender: str, args: List[str]):
         if arg.startswith('#') and arg in bot.channels:
             channels.append(arg)
             await bot.part(arg)
-            session.query(config.Config).filter_by(module='channels', key='join', value=arg).delete()
+            session.query(config.Config).filter_by(module='channels',
+                                                   key='join', value=arg).delete()
     session.commit()
     if len(channels) > 0:
         await bot.message(channel, f"Parted: {', '.join(channels)}.")

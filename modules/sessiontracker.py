@@ -25,10 +25,11 @@ def is_clone(nickname, hostmask):
         network = ipaddress.ip_network(f"{hostmask}/56", False)
     else:
         network = ipaddress.ip_network(f"{hostmask}/24", False)
-    client = ircsessions.IRCSessions(timestamp=timestamp, nickname=nickname, hostmask=hostmask, network=str(network))
-    prevclients = session.query(ircsessions.IRCSessions).filter(or_(ircsessions.IRCSessions.nickname == nickname,
-                                                                    ircsessions.IRCSessions.hostmask == hostmask))\
-        .all()
+    client = ircsessions.IRCSessions(timestamp=timestamp, nickname=nickname,
+                                     hostmask=hostmask, network=str(network))
+    prevclients = session.query(ircsessions.IRCSessions).\
+        filter(or_(ircsessions.IRCSessions.nickname == nickname,
+               ircsessions.IRCSessions.hostmask == hostmask)).all()
     networks = session.query(ircsessions.IRCSessions).all()
     if prevclients:
         print(f"Got clients!")
@@ -36,7 +37,8 @@ def is_clone(nickname, hostmask):
         for row in prevclients:
 
             if row.nickname == client.nickname and row.hostmask == client.hostmask:
-                session.query(ircsessions.IRCSessions).filter(ircsessions.IRCSessions.id == row.id).\
+                session.query(ircsessions.IRCSessions).\
+                    filter(ircsessions.IRCSessions.id == row.id).\
                     update({'timestamp': timestamp})
                 session.commit()
                 return

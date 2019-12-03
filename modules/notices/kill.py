@@ -3,7 +3,9 @@ import fido
 from models import SessionManager, config
 
 regex = re.compile(
-    '.*Received KILL message for (?P<nick>[A-Za-z0-9_´|\[\]]*)!(?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*) from (?P<sender>[A-Za-z0-9_´|\[\]]*) Path: [A-Za-z0-9._\-]*![A-Za-z0-9_´|\[\]]* \((?P<reason>.*)\)$',
+    '.*Received KILL message for (?P<nick>[A-Za-z0-9_´|\[\]]*)!(?P<user>[A-Za-z0-9_´|\[\]]*)'
+    '@(?P<host>[A-Za-z0-9.:_\-]*) from (?P<sender>[A-Za-z0-9_´|\[\]]*) '
+    'Path: [A-Za-z0-9._\-]*![A-Za-z0-9_´|\[\]]* \((?P<reason>.*)\)$',
     re.I)
 
 
@@ -21,5 +23,6 @@ async def on_kill(bot: fido, match):
     sender = match.group('sender')
     reason = match.group('reason')
     await bot.message(operchannel,
-                      f"{bot.colour_red('KILL')} {nick} ({host}) was killed by {sender} with message: {reason}")
+                      f"{bot.colour_red('KILL')} {nick} ({host}) was killed by "
+                      f"{sender} with message: {reason}")
 

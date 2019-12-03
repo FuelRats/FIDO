@@ -6,9 +6,11 @@ from models import config, SessionManager
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
     session = SessionManager().session
-    kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value
+    kick_reason: str = session.query(config.Config).filter_by(module='channelprotection',
+                                                              key='reason')[0].value
     max_highlight_count: int = int(
-        session.query(config.Config).filter_by(module='channelprotection', key='maxhighlightcount')[0].value)
+        session.query(config.Config).filter_by(module='channelprotection',
+                                               key='maxhighlightcount')[0].value)
 
     highlighted_users: List[str] = []
     for word in message.split(' '):

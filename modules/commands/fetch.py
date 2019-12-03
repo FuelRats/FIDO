@@ -16,7 +16,8 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
 
     if len(args) == 0:
-        return "Usage: " + IRC.commandPrefix + "fetch <ip adress1> [<ip address2> <ip address3> ...]"
+        return "Usage: " + IRC.commandPrefix + "fetch <ip adress1> " \
+                                               "[<ip address2> <ip address3> ...]"
 
     lines = []
     for arg in args:
@@ -25,7 +26,8 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         except ValueError:
             return arg + " is an invalid IP Address"
 
-        response = requests.get('https://ipinfo.io/' + arg, headers={'Accept': 'application/json'}).json()
+        response = requests.get('https://ipinfo.io/' + arg, headers={'Accept':
+                                                                     'application/json'}).json()
         location = []
         if 'city' in response and response['city'] != '':
             location.append(response['city'])
@@ -38,7 +40,8 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         if len(location) == 0:
             location.append("Unknown Location")
         location = ", ".join(location)
-        lines.append(f"IP Information {response['ip']}: {location} ISP: {response['org'] if 'org' in response else 'Unknown'}" +
+        lines.append(f"IP Information {response['ip']}: {location} ISP: "
+                     f"{response['org'] if 'org' in response else 'Unknown'}" +
                      (f" Hostname: {response['hostname']}" if 'hostname' in response else ""))
 
     answer = "\r\n".join(lines)
