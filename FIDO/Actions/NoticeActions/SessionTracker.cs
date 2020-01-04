@@ -13,6 +13,7 @@ namespace FIDO.Actions.NoticeActions
 {
   public class SessionTracker : NoticeAction
   {
+    private static readonly Regex bracketsRegex = new Regex(@"\[.*\]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly ConcurrentDictionary<string, HashSet<NickInfo>> nicksOnIps;
 
     public SessionTracker(IrcLayer irc, NexmoClient nexmo, IConfiguration configuration)
@@ -28,8 +29,7 @@ namespace FIDO.Actions.NoticeActions
     protected override void OnMatch(string sender, string nick, string host, string filter, string message, string target)
     {
       var ip = filter;
-      nick = nick.Replace("[", string.Empty);
-      nick = nick.Replace("]", string.Empty);
+      nick = bracketsRegex.Replace(nick, string.Empty);
 
       var nicks = nicksOnIps.GetOrAdd(ip, new HashSet<NickInfo>());
       var nickInfo = new NickInfo(nick);
