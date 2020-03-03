@@ -2,10 +2,7 @@ import sys
 
 import pydle
 import time, requests, threading
-import modules.commandhandler as commandHandler
 import logging
-
-import modules.sessiontracker as sessiontracker
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -14,6 +11,8 @@ from config import IRC, Logging, SQLAlchemy
 from models import SessionManager, config
 from models.config import Config
 from modules import noticehandler, channelprotectionhandler
+from modules import commandhandler as commandHandler
+from modules import sessiontracker
 
 pool = pydle.ClientPool()
 
@@ -33,10 +32,12 @@ class FIDO(pydle.Client):
         session = SessionManager().session
         for result in session.query(config.Config).filter_by(module='channels', key='join'):
             await self.join(result.value)
+        # TODO: Seed session cache by reading /who output on join?
 
     @pydle.coroutine
     async def on_join(self, channel, user):
         await super().on_join(channel, user)
+        # TODO: Maybe session cache here instead?
 
     @pydle.coroutine
     async def on_raw(self, message):

@@ -17,8 +17,8 @@ async def join_channel(bot: fido, channel: str, sender: str, args: List[str]):
         if arg.startswith('#') and arg not in bot.channels:
             channels.append(arg)
             await bot.join(arg)
-            channel = config.Config(module='channels', key='join', value=arg)
-            session.add(channel)
+            newchannel = config.Config(module='channels', key='join', value=arg)
+            session.add(newchannel)
     session.commit()
     if len(channels) > 0:
         await bot.message(channel, f"Joined: {', '.join(channels)}.")

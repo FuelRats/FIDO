@@ -48,6 +48,8 @@ def is_clone(nickname, hostmask):
             elif row.nickname != nickname and row.hostmask == hostmask:
                 print("Different nick from same IP, report!")
                 clonenicks.append(row.nickname)
+                session.add(client)
+                session.commit()
             elif row.hostmask in networks.network:
                 print("Same network!")
         if clonenicks:
@@ -79,7 +81,7 @@ async def check_clone(bot: fido, nickname, hostmask):
     :return: Nothing.
     """
 
-    clonenicks = check_clone(nickname, hostmask)
+    clonenicks = is_clone(nickname, hostmask)
     if clonenicks is not None:
         set_unique = set(clonenicks)
         clones = list(set_unique)
