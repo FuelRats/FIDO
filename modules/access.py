@@ -26,13 +26,17 @@ def require_permission(level: int, above: bool = True, message: str = None):
         async def guarded(bot: fido, channel: str, nick: str, *args, **kwargs):
             if channel not in bot.channels:
                 return None
+            print(f"Modes: {bot.channels[channel]['modes']}")
             modes = bot.channels[channel]['modes']
             maxlevel: int = 0
             for mode in modes:
+                if modes[mode] == True:
+                    continue
+                print(f"Mode: {mode} Nick: {nick}")
                 if nick in modes[mode] and levels[mode] > maxlevel:
                     maxlevel = levels[mode]
 
-            if above and maxlevel < level or not above and maxlevel > level:
+            if above and maxlevel <= level or not above and maxlevel >= level:
                 if message:
                     await bot.message(channel, message)
                     pass
