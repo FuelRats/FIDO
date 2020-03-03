@@ -3,13 +3,14 @@ from config import IRC
 import requests
 import ipaddress
 import fido
-from modules.access import require_permission
+from modules.access import require_permission, Levels
 
 
-@require_permission(level=4, message='DENIED!')
+@require_permission(level=Levels.OP, message='DENIED!')
 async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !fetch command
+    :param channel: Channel the command is invoked in
     :param sender: Sender of the IRC command
     :param bot: bot instance
     :param args: Arguments passed to the command by the user
