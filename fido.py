@@ -13,6 +13,7 @@ from models.config import Config
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
 from modules import sessiontracker
+from modules import configmanager
 
 pool = pydle.ClientPool()
 
@@ -27,11 +28,10 @@ class FIDO(pydle.Client):
         await super().on_connect()
         logging.info("Connected!")
         await self.raw(f"OPER {IRC.operline} {IRC.operlinePassword}\r\n")  # DO NOT REMOVE NEWLINE!!!!!!!
-
+        print(configmanager.get_config(module="channels", key="join"))
         # Join remembered channels
-        session = SessionManager().session
-        for result in session.query(config.Config).filter_by(module='channels', key='join'):
-            await self.join(result.value)
+        for channel in configmanager.get_config(module='channels', key='join'):
+            await self.join(channel)
         # TODO: Seed session cache by reading /who output on join?
 
     @pydle.coroutine
