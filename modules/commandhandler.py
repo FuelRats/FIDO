@@ -1,11 +1,12 @@
 import fido
 from config import IRC
-from modules.commands import fetch, channels, puppet
+from modules.commands import fetch, channels, puppet, mute
 
 commandsDict = {
     "fetch": fetch.invoke,
     "join": channels.join_channel,
-    "part": channels.part_channel
+    "part": channels.part_channel,
+    "mute": mute.invoke
 }
 
 privateCommandsDict = {
