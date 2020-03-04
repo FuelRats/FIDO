@@ -1,5 +1,5 @@
 import time
-
+import socket
 import fido, datetime, ipaddress
 
 from models import SessionManager
@@ -20,8 +20,15 @@ def is_clone(nickname, hostmask):
     sessionmanager = SessionManager()
     session = sessionmanager.session
     timestamp = datetime.datetime.now()
-    ip = ipaddress.ip_address(hostmask)
-    if ip.version == '6':
+    try:
+        ip = ipaddress.ip_address(hostmask)
+    except ValueError:
+        try:
+            ip = ipaddress.ip_address(socket.gethostbyname(hostmask))
+        except socket.gaierror:
+            print(f"Unable to make sense of hostmask: {hostmask}")
+    print(f"IP version: {ip.version}")
+    if ip.version == 6:
         network = ipaddress.ip_network(f"{hostmask}/56", False)
     else:
         network = ipaddress.ip_network(f"{hostmask}/24", False)
@@ -31,7 +38,6 @@ def is_clone(nickname, hostmask):
         .all()
     networks = session.query(ircsessions.IRCSessions).all()
     if prevclients:
-        print(f"Got clients!")
         clonenicks = []
         for row in prevclients:
 

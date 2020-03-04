@@ -51,7 +51,7 @@ class FIDO(pydle.Client):
 
     @pydle.coroutine
     async def on_private_message(self, target, nick, message):
-        await super().on_private_message(self, target, nick, message)
+        await super().on_private_message(target, nick, message)
         await commandHandler.on_private_message(self, nick, message)
 
     @pydle.coroutine

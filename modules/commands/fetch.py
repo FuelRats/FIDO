@@ -22,13 +22,26 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
 
     lines = []
     for arg in args:
-        try:
-            ipaddress.ip_address(arg)
-        except ValueError:
-            return arg + " is an invalid IP Address"
+        ip = ""
+        if arg in bot.users:
+            # TODO: Pydle does not currently support fetching real hostnames/ips, only cloaks/vhosts
+            # whois = await bot.whois(arg)
+            # ip = bot.users[arg]['hostname']
+            lines.append("Nicknames can't currently be looked up, please supply an IP instead.")
+            continue
+        else:
+            try:
+                ipaddress.ip_address(arg)
+                ip = arg
+            except ValueError:
+                return arg + " is an invalid IP Address"
 
-        response = requests.get('https://ipinfo.io/' + arg, headers={'Accept': 'application/json'}).json()
+        response = requests.get(f'https://ipinfo.io/{ip}', headers={'Accept': 'application/json'}).json()
+        print(response)
         location = []
+        if 'error' in response:
+            lines.append(f"Could not fetch IP information for {ip}: {response['error']['title']}: {response['error']['message']}")
+            continue
         if 'city' in response and response['city'] != '':
             location.append(response['city'])
         if 'region' in response and response['region'] != '':
