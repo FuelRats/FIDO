@@ -2,7 +2,7 @@ from sqlalchemy import create_engine
 from models.meta import Base
 from config import SQLAlchemy
 
-from models import ircsessions, config, SessionManager
+from models import ircsessions, config, SessionManager, groups
 
 
 if __name__ == '__main__':

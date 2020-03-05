@@ -14,6 +14,7 @@ from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
 from modules import sessiontracker
 from modules import configmanager
+from modules import nexmo
 
 pool = pydle.ClientPool()
 
