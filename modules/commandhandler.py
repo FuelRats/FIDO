@@ -1,12 +1,14 @@
 import fido
 from config import IRC
-from modules.commands import fetch, channels, puppet, mute
+from modules.commands import fetch, channels, puppet, mute, nexmo
 
 commandsDict = {
     "fetch": fetch.invoke,
     "join": channels.join_channel,
     "part": channels.part_channel,
-    "mute": mute.invoke
+    "mute": mute.invoke,
+    "groupadd": nexmo.groupadd,
+    "sendmessage": nexmo.sendmessage,
 }
 
 privateCommandsDict = {

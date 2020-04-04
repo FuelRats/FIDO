@@ -7,7 +7,7 @@ def nexmo_message(target, message):
     appid = configmanager.get_config(module='nexmo', key='appid')[0]
     secret = configmanager.get_config(module='nexmo', key='secret')[0]
     client = nexmo.Client(key=appid, secret=secret)
-    res = client.send_message({'from': 'Fuelrats FIDO', 'to': target, 'text': message})
+    res = client.send_message({'from': 'FIDO', 'to': target, 'text': message})
 
 
 def get_group(group):
@@ -23,7 +23,7 @@ def get_group(group):
     return members
 
 
-def add_group(group, nickname, number):
+def add_group(mygroup, nickname, number):
     """
     Adds a member to a group
     :param group: Group name
@@ -32,7 +32,11 @@ def add_group(group, nickname, number):
     :return: Nothing
     """
     session = SessionManager().session
-    member = groups.Groups(nickname=nickname, number=number, group=group)
+    query = session.query(groups.Groups).filter(groups.Groups.group == mygroup).all()
+    print(f"Groups: {query}")
+    if nickname in query:
+        return
+    member = groups.Groups(nickname=nickname, number=number, group=mygroup)
     session.add(member)
     session.commit()
 
