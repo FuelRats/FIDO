@@ -3,6 +3,9 @@ from config import IRC
 import requests
 import ipaddress
 import fido
+from requests.exceptions import SSLError
+from OpenSSL.SSL import Error
+
 from modules.access import require_permission, Levels
 
 
@@ -35,8 +38,11 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
                 ip = arg
             except ValueError:
                 return arg + " is an invalid IP Address"
-
-        response = requests.get(f'https://ipinfo.io/{ip}', headers={'Accept': 'application/json'}).json()
+        try:
+            response = requests.get(f'https://ipinfo.io/{ip}', headers={'Accept': 'application/json'}).json()
+        except SSLError:
+            await bot.message(channel, "An SSL error occurred while trying to retrieve IP information.")
+            return
         print(response)
         location = []
         if 'error' in response:

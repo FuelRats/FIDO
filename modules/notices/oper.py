@@ -10,7 +10,7 @@ async def on_oper_fail(bot: fido, match):
     :param bot: bot instance
     :param message: message
     :param match: regex match
-    :return: The reply message
+    :return: Nothing
     """
     operchannel = bot.get_oper_channel()
     nick = match.group('nick')
@@ -19,3 +19,4 @@ async def on_oper_fail(bot: fido, match):
     reason = match.group('reason')
     await bot.message(operchannel,
                       f"Failed {bot.colour_red('OPER')} by {nick} ({host}): {reason}")
+    return
