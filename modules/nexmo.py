@@ -3,11 +3,11 @@ from models import SessionManager, groups, config
 from modules import configmanager
 
 
-def nexmo_message(target, message):
+def nexmo_message(target, message, source='FIDO'):
     appid = configmanager.get_config(module='nexmo', key='appid')[0]
     secret = configmanager.get_config(module='nexmo', key='secret')[0]
     client = nexmo.Client(key=appid, secret=secret)
-    res = client.send_message({'from': 'FIDO', 'to': target, 'text': message})
+    res = client.send_message({'from': source, 'to': target, 'text': message})
 
 
 def get_group(group):
@@ -51,6 +51,10 @@ def send_to_group(group, message):
     print("Sending to group...")
     members = get_group(group)
     print(f"members: {members}")
+    us_number = configmanager.get_config(module='nexmo', key='us_number')[0]
     for member in members:
-        nexmo_message(member['number'], message)
+        if member['number'].startswith('+1'):
+            nexmo_message(member['number'], message, us_number)
+        else:
+            nexmo_message(member['number'], message)
     return
