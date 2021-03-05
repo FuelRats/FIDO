@@ -1,17 +1,20 @@
-import time
+import re
 import socket
-import fido, datetime, ipaddress
-
-from models import SessionManager
-from models import ircsessions
-from config import SessionHandler
 
 from sqlalchemy import or_
 
+import datetime
+import fido
+import ipaddress
+from config import SessionHandler
+from models import SessionManager
+from models import ircsessions, monitor
 
-def is_clone(nickname, hostmask):
+
+def is_clone(nickname, hostmask, withdate=False):
     """
     Checks whether a nickname is considered a clone by the bot.
+    :param withdate: Whether to return a tuple containing both matches and the last timestamp of connection
     :param hostmask: Hostmask of user
     :param bot: bot instance
     :param nickname: Nickname of user
@@ -34,7 +37,7 @@ def is_clone(nickname, hostmask):
         network = ipaddress.ip_network(f"{hostmask}/24", False)
     client = ircsessions.IRCSessions(timestamp=timestamp, nickname=nickname, hostmask=hostmask, network=str(network))
     prevclients = session.query(ircsessions.IRCSessions).filter(or_(ircsessions.IRCSessions.nickname == nickname,
-                                                                    ircsessions.IRCSessions.hostmask == hostmask))\
+                                                                    ircsessions.IRCSessions.hostmask == hostmask)) \
         .all()
     networks = session.query(ircsessions.IRCSessions).all()
     if prevclients:
@@ -42,17 +45,26 @@ def is_clone(nickname, hostmask):
         for row in prevclients:
 
             if row.nickname == client.nickname and row.hostmask == client.hostmask:
-                session.query(ircsessions.IRCSessions).filter(ircsessions.IRCSessions.id == row.id).\
-                    update({'timestamp': timestamp})
+                print("Same nick from same IP, update timestamp.")
+                row.timestamp = timestamp
+                # session.query(ircsessions.IRCSessions).filter(ircsessions.IRCSessions.id == row.id). \
+                #     update({'timestamp': timestamp})
+                # This update should be committable through the row itself.
                 session.commit()
-                return
+                if withdate:
+                    return None, None
+                return None
             elif row.nickname == client.nickname and row.hostmask != client.hostmask:
                 print("Same nick from different IP, store!")
                 session.add(client)
                 session.commit()
-                return
-            elif row.nickname != nickname and row.hostmask == hostmask:
+                if withdate:
+                    return None, None
+                return None
+            elif row.nickname != client.nickname and row.hostmask == client.hostmask:
                 print("Different nick from same IP, report!")
+                if withdate:
+                    lasttime = row.timestamp
                 clonenicks.append(row.nickname)
                 session.add(client)
                 session.commit()
@@ -61,20 +73,30 @@ def is_clone(nickname, hostmask):
         if clonenicks:
             set_unique = set(clonenicks)
             clones = list(set_unique)
-            return clones
+            print(f"Clones: {clones} Lasttime: {lasttime}")
+            if withdate:
+                return clones, lasttime
+            else:
+                return clones
         else:
-            return None
+            if withdate:
+                return None, None
+            else:
+                return None
     else:
         session.add(client)
         session.commit()
         retention_time: int = int(SessionHandler.retention_time)
-        timeout = time.time() - (60*60*24*retention_time)
-        oldrecords = session.query(ircsessions.IRCSessions).\
+        timeout = datetime.datetime.now() - datetime.timedelta(days=retention_time)
+        oldrecords = session.query(ircsessions.IRCSessions). \
             filter(ircsessions.IRCSessions.timestamp < timeout)
         if oldrecords.count() > 0:
             print(f"Deleting {oldrecords.count()} old sessions.")
             session.query(ircsessions.IRCSessions). \
                 filter(ircsessions.IRCSessions.timestamp < timeout).delete()
+            session.commit()
+        if withdate:
+            return None, None
         return None
 
 
@@ -86,14 +108,21 @@ async def check_clone(bot: fido, nickname, hostmask):
     :param hostmask: Hostmask (Or rather just IP) of user
     :return: Nothing.
     """
+    sessionmanager = SessionManager()
+    session = sessionmanager.session
+    print(f"Nick: {nickname} Host: {hostmask}")
+    sus_nicks = session.query(monitor.Monitor.nickname).filter(monitor.Monitor.nickname == nickname).one_or_none()
+    if sus_nicks:
+        print(f"Sus nick found!")
+        await bot.message("#rat-ops", f"Monitored nick {nickname} has come online.")
 
-    clonenicks = is_clone(nickname, hostmask)
-    if clonenicks is not None:
+    clonenicks, lasttime = is_clone(nickname, hostmask, True)
+    if clonenicks is not None and lasttime is not None:
         set_unique = set(clonenicks)
         clones = list(set_unique)
         await bot.message("#opers",
                           f"{bot.colour_red('CLONE')} {nickname} has connected from {hostmask}, "
-                          f"previous nicknames: {', '.join(clones)}")
+                          f"previous nicknames: {', '.join(clones)} (Last connected {lasttime})")
 
 
 async def get_clones(bot: fido, nickname, hostmask):

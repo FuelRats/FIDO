@@ -7,7 +7,7 @@ regex = re.compile(
     re.I)
 
 
-async def on_kill(bot: fido, match):
+async def on_kill(bot: fido, message:str, match):
     """
     Handler for the kill notice
     :param bot: bot instance

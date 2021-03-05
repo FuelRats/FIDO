@@ -7,8 +7,8 @@ class IRC:
     useSsl = True
     nickname = 'FIDO-dev'
     commandPrefix = '!'
-    operline = 'fido_local'
-    operlinePassword = 'squeak'
+    operline = 'fido-py'
+    operlinePassword = 'squeakformebaby'
 
 
 class Logging:
