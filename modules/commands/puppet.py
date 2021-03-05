@@ -10,20 +10,21 @@ def get_channel(bot: fido, channel: str):
 
 
 async def act(bot: fido, channel: str, sender: str, args: List[str]):
-    channel = get_channel(channel)
-    message = ', '.join(args[1:])
+    channel = get_channel(bot, channel)
+    print("I'm gonna woof!")
+    message = ' '.join(args)
     if channel is None:
         return
     if message is None:
         return
-    await bot.act(channel, message)
+    await bot.act(channel, f":ACTION {message}")
 
 
 async def say(bot: fido, channel: str, sender: str, args: List[str]):
-    channel = get_channel(channel)
-    message = ', '.join(args[1:])
+    channel = get_channel(bot, channel)
+    message = ' '.join(args)
     if channel is None:
         return
     if message is None:
         return
-    await bot.act(channel, message)
+    await bot.message(channel, message)

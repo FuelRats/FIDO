@@ -1,8 +1,7 @@
 import fido
-from modules.channelprotections import masshighlighting
-from modules.channelprotections import zalgoprotection
+from modules.channelprotections import masshighlighting, spamprotection, droneprotection, zalgoprotection
 
-protections = [masshighlighting.on_message, zalgoprotection.on_message]
+protections = [masshighlighting.on_message, spamprotection.on_message, droneprotection.on_message, zalgoprotection.on_message]
 
 
 async def handle_message(bot: fido, channel: str, sender:str, message: str):

@@ -27,11 +27,9 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     for arg in args:
         ip = ""
         if arg in bot.users:
-            # TODO: Pydle does not currently support fetching real hostnames/ips, only cloaks/vhosts
-            # whois = await bot.whois(arg)
-            # ip = bot.users[arg]['hostname']
-            lines.append("Nicknames can't currently be looked up, please supply an IP instead.")
-            continue
+            whois = await bot.whois(arg)
+            print(f"Whois info: {whois}")
+            ip = bot.users[arg]['real_ip_address']
         else:
             try:
                 ipaddress.ip_address(arg)

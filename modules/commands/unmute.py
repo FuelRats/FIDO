@@ -10,7 +10,7 @@ from models import config, SessionManager
 @require_permission(level=Levels.OP, message='DENIED!')
 async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
-    Mute/Unmute a nick.
+    Unmute a nick.
     :param bot: Bot reference
     :param channel: Channel the command is invoked in
     :param sender: Who invoked the command
@@ -29,7 +29,6 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             mutetime = session.query(config.Config).\
                 filter_by(module='channelprotection', key='mutetime').one_or_none()
             print(mutetime)
-            await bot.set_mode(channel, "-v", f"{bot.users[arg]['nickname']}")
-            await bot.set_mode(channel, "+b", f"~t:{mutetime.value or 6}:*!*@{bot.users[arg]['hostname']}")
+            await bot.set_mode(channel, "-b", f"~t:{mutetime.value or 6}:*!*@{bot.users[arg]['hostname']}")
             # await bot.rawmsg("MODE", f":#help +b ~t:{mutetime.value or 6}:~q:*!*@{bot.users[arg]['hostname']}")
-            await bot.message(channel, f"Muted {bot.users[arg]['nickname']} for {mutetime.value or 6} minutes.")
+            await bot.message(channel, f"Unmuted {bot.users[arg]['nickname']}.")
