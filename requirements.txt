@@ -1,4 +1,5 @@
 sqlalchemy
 requests
+pyopenssl
 pydle==0.9.4
 nexmo
