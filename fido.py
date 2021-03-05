@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from config import IRC, Logging, SQLAlchemy
-from models import SessionManager, config
+from models import SessionManager, config, monitor
 from models.config import Config
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
@@ -19,6 +19,13 @@ from modules import nexmo
 pool = pydle.ClientPool()
 
 logging.basicConfig(stream=sys.stdout, level=Logging.level)
+
+#baseClient = pydle.featurize(pydle.features.CTCPSupport, pydle.features.AccountSupport,
+#                             pydle.features.IRCv3Support, pydle.features.WHOXSupport, pydle.features.ISUPPORTSupport,
+#                             pydle.features.TLSSupport, pydle.features.ircv3.CapabilityNegotiationSupport,
+#                             pydle.features.ircv3.SASLSupport, pydle.features.ircv3.MonitoringSupport,
+#                             pydle.features.ircv3.TaggedMessageSupport, pydle.features.ircv3.MetadataSupport,
+#                             pydle.features.rfc1459.RFC1459Support)
 
 
 class FIDO(pydle.Client):
@@ -34,6 +41,11 @@ class FIDO(pydle.Client):
         for channel in configmanager.get_config(module='channels', key='join'):
             await self.join(channel)
         # TODO: Seed session cache by reading /who output on join?
+        sessionmanager = SessionManager()
+        session = sessionmanager.session
+        monitors = session.query(monitor.Monitor).all()
+        for mon in monitors:
+            self.monitor(mon.nickname)
 
     @pydle.coroutine
     async def on_join(self, channel, user):
@@ -46,9 +58,20 @@ class FIDO(pydle.Client):
 
     @pydle.coroutine
     async def on_channel_message(self, target, nick, message):
+        print("Chan message...")
         await super().on_channel_message(target, nick, message)
         await channelprotectionhandler.handle_message(self, target, nick, message)
         await commandHandler.on_channel_message(self, target, nick, message)
+
+    @pydle.coroutine
+    async def on_channel_notice(self, target, nick, message):
+        await super().on_channel_notice(target, nick, message)
+
+    @pydle.coroutine
+    async def on_ctcp(self, by, target, what, contents):
+        await super().on_ctcp(by, target, what, contents)
+        if what == 'ACTION':
+            await channelprotectionhandler.handle_message(self, target, by, contents)
 
     @pydle.coroutine
     async def on_private_message(self, target, nick, message):
@@ -60,6 +83,18 @@ class FIDO(pydle.Client):
         await super().on_notice(target, nick, message)
         logging.debug(f"target: {target}, nick: {nick}, message: {message}")
         await noticehandler.handle_notice(self, message)
+
+    @pydle.coroutine
+    async def on_user_online(self, nickname):
+        await super().on_user_online(nickname)
+        logging.debug(f"Monitored user {nickname} is online.")
+        await self.message("#rat-ops", f"Monitored user {nickname} is online!")
+
+    @pydle.coroutine
+    async def on_user_offline(self, nickname):
+        await super().on_user_offline(nickname)
+        logging.debug(f"Monitored user {nickname} is now offline.")
+        await self.message("#rat-ops", f"Monitored user {nickname} is now offline.")
 
     @staticmethod
     def colour_red(message: str):
