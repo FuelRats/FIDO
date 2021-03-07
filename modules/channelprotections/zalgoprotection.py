@@ -12,6 +12,7 @@ ZALGO_CHAR_CATEGORIES = ['Mn', 'Me']
 THRESHOLD = 0.5
 PERCENTILE = 0.75
 
+
 def percentile(scores: list):
     if len(scores) == 0:
         return 0
@@ -43,4 +44,4 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
     kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value
 
     if is_zalgo(unicodedata.normalize('NFD', message)):
-      await bot.kick(channel, sender, kick_reason)
+        await bot.kick(channel, sender, kick_reason)

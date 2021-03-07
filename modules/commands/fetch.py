@@ -4,9 +4,11 @@ import requests
 import ipaddress
 import fido
 from requests.exceptions import SSLError
-from OpenSSL.SSL import Error
 
 from modules.access import require_permission, Levels
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @require_permission(level=Levels.OP, message='DENIED!')
@@ -28,7 +30,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         ip = ""
         if arg in bot.users:
             whois = await bot.whois(arg)
-            print(f"Whois info: {whois}")
+            log.debug(f"Whois info: {whois}")
             ip = bot.users[arg]['real_ip_address']
         else:
             try:
@@ -41,7 +43,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         except SSLError:
             await bot.message(channel, "An SSL error occurred while trying to retrieve IP information.")
             return
-        print(response)
+        log.debug(response)
         location = []
         if 'error' in response:
             lines.append(f"Could not fetch IP information for {ip}: {response['error']['title']}: {response['error']['message']}")

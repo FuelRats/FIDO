@@ -14,6 +14,7 @@ levels = {
     None: 0
 }
 
+
 async def on_message(bot: fido, channel: str, sender: str, message: str):
     session = SessionManager().session
     kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value

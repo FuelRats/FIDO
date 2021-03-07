@@ -120,6 +120,12 @@ async def check_clone(bot: fido, nickname, hostmask):
     if clonenicks is not None and lasttime is not None:
         set_unique = set(clonenicks)
         clones = list(set_unique)
+        res = session.query(monitor.Monitor.nickname).all()
+        sus_nicks = [value for value, in res]  # Why the fuck do I need to flatten this, SQLAlchemy?
+        for sus in sus_nicks:
+            if sus in clones:
+                await bot.message("#rat-ops", f"{bot.colour_red('MONITOR')} Nick {nickname} is a "
+                                              f"clone of monitored nick {sus}!")
         await bot.message("#opers",
                           f"{bot.colour_red('CLONE')} {nickname} has connected from {hostmask}, "
                           f"previous nicknames: {', '.join(clones)} (Last connected {lasttime})")

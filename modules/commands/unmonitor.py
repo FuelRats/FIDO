@@ -5,6 +5,9 @@ import fido
 from modules.access import require_permission, Levels
 from models import SessionManager
 from models import monitor
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @require_permission(level=Levels.OP, message='DENIED!')
@@ -30,6 +33,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         try:
             session.query(monitor.Monitor).filter(monitor.Monitor.nickname == nick).delete()
             session.commit()
+            log.info(f"{sender} stopped monitoring for {nick}")
         except:
             print("Failed to delete monitor row!")
             session.rollback()
