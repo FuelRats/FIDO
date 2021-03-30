@@ -18,3 +18,4 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
                 highlighted_users.append(user)
     if len(highlighted_users) >= max_highlight_count:
         await bot.kick(channel, sender, kick_reason)
+        await bot.message("#opers", f"{sender} was kicked from channel {channel} for highlight spam.")

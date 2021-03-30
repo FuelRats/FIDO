@@ -16,8 +16,7 @@ async def on_connect(bot: fido, message: str, match):
     :param match: regex match
     :return: Optional, returns if a clone is detected
     """
-    print("Matched a connect regexp")
+
     nick = match.group('nick')
     hostmask = match.group('host')
-    print("Calling sessiontracker.")
     await sessiontracker.check_clone(bot, nick, hostmask)

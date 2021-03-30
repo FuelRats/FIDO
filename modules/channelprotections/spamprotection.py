@@ -25,10 +25,9 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
 
     # Clear buffer of old messages
     delta = datetime.datetime.now() - datetime.timedelta(seconds=retention_time)
-    print(f"Timeout: {delta}")
     session.query(messagecounter.Messagecounter).filter(messagecounter.Messagecounter.timestamp <= delta).delete()
     session.commit()
-    if sender in ['MechaSqueak[BOT]', 'RatMama[BOT]']:
+    if sender in ['MechaSqueak[BOT]', 'RatMama[BOT]', 'FIDO[BOT]']:
         # Do not smack the bots, ever. Also, don't add their messages.
         return
     modes = bot.channels[channel]['modes']
@@ -47,6 +46,7 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
     if msgs > maxmessages:
 
         await bot.kick(channel, sender, kick_reason)
+        await bot.message("#opers", f"{sender} was kicked from {channel} for spamming.")
     msg = messagecounter.Messagecounter(timestamp=datetime.datetime.now(), nickname=sender, hostmask=sender, msg='Placeholder')
     session.add(msg)
     session.commit()

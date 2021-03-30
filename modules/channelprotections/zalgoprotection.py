@@ -45,3 +45,4 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
 
     if is_zalgo(unicodedata.normalize('NFD', message)):
         await bot.kick(channel, sender, kick_reason)
+        await bot.message("#opers", f"{sender} was kicked from channel {channel} for using zalgo.")

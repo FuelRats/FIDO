@@ -1,9 +1,6 @@
-import time
-from typing import List
 import datetime
 import fido
 from models import config, SessionManager, drones
-from modules.access import require_permission, Levels
 from modules import configmanager
 import re
 
@@ -30,7 +27,6 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
     if 'DNSBL' not in message:
         return
     session = SessionManager().session
-    kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value
     maxdrones: int = int(
         session.query(config.Config).filter_by(module='channelprotection', key='maxdrones')[0].value)
     retention_time: int = int(
@@ -40,7 +36,6 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
     delta = datetime.datetime.now() - datetime.timedelta(minutes=retention_time)
     session.query(drones.Drones).filter(drones.Drones.timestamp <= delta).delete()
     session.commit()
-    print("*** DRONE CHECK ***")
     match = re.match(regex, message)
     if match:
         print(f"Got a regex match for DNSBL message: {match.group('nick')} is a "
@@ -66,5 +61,9 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
                                               f"new connections failing drone scans will now be KILLed. This may cause "
                                               f"clients to not be able to connect.")
                 configmanager.set_config('droneprotection', 'lockdown', 1)
+        if "Compromised router" in match.group('zone'):
+            await bot.message("#ratchat", f"Advisory: Client {match.group('nick')}'s IP address is listed in a "
+                                          f"blacklist indicating their router / gateway hosts malware. "
+                                          f"Inform client during debrief.")
     else:
         print("*** No RE match even though DNSBL...")

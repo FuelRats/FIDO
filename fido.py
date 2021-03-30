@@ -58,7 +58,6 @@ class FIDO(pydle.Client):
 
     @pydle.coroutine
     async def on_channel_message(self, target, nick, message):
-        print("Chan message...")
         await super().on_channel_message(target, nick, message)
         await channelprotectionhandler.handle_message(self, target, nick, message)
         await commandHandler.on_channel_message(self, target, nick, message)
