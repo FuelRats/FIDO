@@ -50,6 +50,9 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
         if lockdown == 1:
             # We're already in lockdown, just slaughter.
             print(f"Theoretical KILL of {match.group('nick')}.")
+            await bot.rawmsg(f"KILL {match.group('nick')} Connecting through a VPN or open proxy is not "
+                             f"currently allowed.")
+            await bot.message("#opers", f"LOCKDOWN: Automatically killed {match.group('nick')} (DNSBL)")
         else:
             # Should we go to lockdown due to number of drones?
             if dronecount > maxdrones:
