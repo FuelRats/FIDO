@@ -44,10 +44,10 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
                               hostmask=match.group('ip'), msg=f"{match.group('zone')}: {match.group('type')}")
         session.add(drone)
         session.commit()
-        lockdown = configmanager.get_config('droneprotection', 'lockdown').toint()
+        lockdown = configmanager.get_config('droneprotection', 'lockdown')
         dronecount = session.query(drones.Drones).count()
-        print(f"Lockdown status: {lockdown}.")
-        if lockdown == "True":
+        print(f"Lockdown status: {lockdown[0]}.")
+        if lockdown[0] == "True":
             # We're already in lockdown, just slaughter.
             print(f"Theoretical KILL of {match.group('nick')}.")
             await bot.rawmsg(f"KILL {match.group('nick')} Connecting through a VPN or open proxy is not "
