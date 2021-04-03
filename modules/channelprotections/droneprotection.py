@@ -44,10 +44,10 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
                               hostmask=match.group('ip'), msg=f"{match.group('zone')}: {match.group('type')}")
         session.add(drone)
         session.commit()
-        lockdown = configmanager.get_config('droneprotection', 'lockdown')
+        lockdown = configmanager.get_config('droneprotection', 'lockdown').toint()
         dronecount = session.query(drones.Drones).count()
-
-        if lockdown == 1:
+        print(f"Lockdown status: {lockdown}.")
+        if lockdown == "True":
             # We're already in lockdown, just slaughter.
             print(f"Theoretical KILL of {match.group('nick')}.")
             await bot.rawmsg(f"KILL {match.group('nick')} Connecting through a VPN or open proxy is not "
@@ -63,7 +63,7 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
                 await bot.message("#ratchat", f"*** LOCKDOWN INITIATED *** Excessive drones connecting to network, "
                                               f"new connections failing drone scans will now be KILLed. This may cause "
                                               f"clients to not be able to connect.")
-                configmanager.set_config('droneprotection', 'lockdown', 1)
+                configmanager.set_config('droneprotection', 'lockdown', "True")
         if "Compromised router" in match.group('zone'):
             await bot.message("#ratchat", f"Advisory: Client {match.group('nick')}'s IP address is listed in a "
                                           f"blacklist indicating their router / gateway hosts malware. "
