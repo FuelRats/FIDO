@@ -15,7 +15,7 @@ async def protect_banned_asn(bot: fido, nickname, hostmask):
     res, network = await check_ban(bot, nickname, hostmask)
     if res:
         await bot.message("#opers", f"ASN BAN: User {nickname} connecting from "
-                                    f"banned network {network.asn_name} ({network.prefix}/{network.cidr}")
+                                    f"banned network {network.asn_name} ({network.prefix}/{network.cidr})")
         await bot.raw(f"GLINE *@{hostmask} 7d You are connecting from a banned VPN network, which is not "
                       f"currently allowed. If you believe this is in error, please contact ops@fuelrats.com\n")
         return True
@@ -46,8 +46,7 @@ async def check_ban(bot: fido, nickname, hostmask):
     else:
         network = ipaddress.ip_network(f"{hostmask}/24", False)
     prefixes = session.query(ASNBlacklist).all()
-    networklist = []
-    print("Construct network list.")
+
     for item in prefixes:
         n2 = ipaddress.ip_network(f"{item.prefix}/{item.cidr}")
         if network.overlaps(n2):

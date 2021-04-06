@@ -5,10 +5,12 @@ import fido
 from models import asn_blacklist, config
 from config import SessionHandler
 from models import SessionManager
+from modules.access import require_permission, Levels
 from modules.networkprotection.asn_blacklist import protect_banned_asn
 api_host = "https://api.bgpview.io/"
 
 
+@require_permission(level=Levels.OP, message="'You are not allowed to ban networks.")
 async def ban_asn(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !ban_asn command
@@ -46,6 +48,7 @@ async def ban_asn(bot: fido, channel: str, sender: str, args: List[str]):
     await bot.message(channel, f"ASN Ban: Blocked {pcount4} IPv4 prefixes, {pcount6} IPv6 prefixes.")
 
 
+@require_permission(level=Levels.OP, message="'You are not allowed to ban networks.")
 async def test_asn(bot: fido, channel: str, sender: str, args: List[str]):
     res = await protect_banned_asn(bot, sender, args[0])
     if res:
@@ -54,6 +57,12 @@ async def test_asn(bot: fido, channel: str, sender: str, args: List[str]):
         await bot.message(channel, f"ASN ban check returns false.")
 
 
+@require_permission(level=Levels.OP, message="'You are not allowed to list banned networks.")
+async def list_banned(bot: fido, channel: str, sender: str, args: List[str]):
+    session = SessionManager().session
+
+
+@require_permission(level=Levels.OP, message="'You are not allowed to unban networks.")
 async def unban_asn(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !unban_asn command
@@ -62,3 +71,18 @@ async def unban_asn(bot: fido, channel: str, sender: str, args: List[str]):
     :return: The reply message
     """
     session = SessionManager().session
+    for arg in args:
+        if arg.startswith('AS'):
+            res = session.query(asn_blacklist.ASNBlacklist).\
+                filter(asn_blacklist.ASNBlacklist.asn == arg).first()
+            if res:
+                print(f"Removing ban on {arg}.")
+                tmp = session.query(asn_blacklist.ASNBlacklist).\
+                    filter(asn_blacklist.ASNBlacklist.asn == arg).delete()
+                session.commit()
+                await bot.message(channel, f"Unbanned ASN {arg}.")
+            else:
+                await bot.message(channel, f"{arg} is not a banned ASN.")
+        else:
+            await bot.message(channel, f"{arg} is not a valid argument, provide AS numbers prefixed with 'AS'")
+    return
