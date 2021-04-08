@@ -23,8 +23,9 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
 
     if len(args) == 0:
-        return "Usage: " + IRC.commandPrefix + "fetch <ip adress1> [<ip address2> <ip address3> ...]"
-
+        return "Usage: " + IRC.commandPrefix + "fetch <ip adress1|nickname> [<ip address2> <ip address3> ...]"
+    if channel not in ['"#opers', '#rat-ops', '#operations']:
+        return "This command can only be used in certain channels."
     lines = []
     for arg in args:
         ip = ""

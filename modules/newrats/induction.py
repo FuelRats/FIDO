@@ -1,7 +1,4 @@
-import re
 import fido
-from modules import sessiontracker
-from modules.networkprotection import asn_blacklist
 
 
 async def on_join(bot: fido, channel: str, user: str):
