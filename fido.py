@@ -15,6 +15,7 @@ from modules import commandhandler as commandHandler
 from modules import sessiontracker
 from modules import configmanager
 from modules import nexmo
+from modules.newrats import induction
 
 pool = pydle.ClientPool()
 
@@ -50,6 +51,7 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_join(self, channel, user):
         await super().on_join(channel, user)
+        await induction.on_join(self, channel, user)
         # TODO: Maybe session cache here instead?
 
     @pydle.coroutine

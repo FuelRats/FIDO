@@ -48,11 +48,11 @@ async def ban_asn(bot: fido, channel: str, sender: str, args: List[str]):
     await bot.message(channel, f"ASN Ban: Blocked {pcount4} IPv4 prefixes, {pcount6} IPv6 prefixes.")
 
 
-@require_permission(level=Levels.OP, message="'You are not allowed to ban networks.")
+@require_permission(level=Levels.OP, message="'You are not allowed to test banned networks.")
 async def test_asn(bot: fido, channel: str, sender: str, args: List[str]):
     res = await protect_banned_asn(bot, sender, args[0])
     if res:
-        await bot.message(channel, f"ASN ban check returns true, action?")
+        await bot.message(channel, f"ASN ban check returns true.")
     else:
         await bot.message(channel, f"ASN ban check returns false.")
 

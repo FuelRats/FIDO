@@ -32,7 +32,6 @@ async def check_ban(bot: fido, nickname, hostmask):
     """
     sessionmanager = SessionManager()
     session = sessionmanager.session
-    print(f"ASN ban check on nick: {nickname} Host: {hostmask}")
     try:
         ip = ipaddress.ip_address(hostmask)
     except ValueError:
@@ -40,7 +39,6 @@ async def check_ban(bot: fido, nickname, hostmask):
             ip = ipaddress.ip_address(socket.gethostbyname(hostmask))
         except socket.gaierror:
             print(f"Unable to make sense of hostmask: {hostmask}")
-    print(f"IP version: {ip.version}")
     if ip.version == 6:
         network = ipaddress.ip_network(f"{hostmask}/56", False)
     else:
@@ -50,7 +48,5 @@ async def check_ban(bot: fido, nickname, hostmask):
     for item in prefixes:
         n2 = ipaddress.ip_network(f"{item.prefix}/{item.cidr}")
         if network.overlaps(n2):
-            print(f"Overlapping network: {n2}")
             return True, item
-    print("Network test done.")
     return False, None
