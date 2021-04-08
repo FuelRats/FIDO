@@ -32,6 +32,10 @@ logging.basicConfig(stream=sys.stdout, level=Logging.level)
 class FIDO(pydle.Client):
     operchannel: str = None
 
+    def __init__(self, *args, **kwargs):
+        self.recent_greeting = []
+        super().__init__(*args, **kwargs)
+
     @pydle.coroutine
     async def on_connect(self):
         await super().on_connect()
