@@ -67,13 +67,13 @@ def is_clone(nickname, hostmask, withdate=False):
                     lasttime = row.timestamp
                 clonenicks.append(row.nickname)
                 session.add(client)
-                session.commit()
             elif row.hostmask in networks.network:
                 print("Same network!")
         if clonenicks:
             set_unique = set(clonenicks)
             clones = list(set_unique)
             print(f"Clones: {clones} Lasttime: {lasttime}")
+            session.commit()
             if withdate:
                 return clones, lasttime
             else:
