@@ -2,7 +2,12 @@ import fido
 
 
 async def on_join(bot: fido, channel: str, user: str):
+    if user == 'FIDO[BOT]':
+        return  # Yah, don't greet yourself, you silly bot.
     if channel == '#NewRats':
+        whois = await bot.whois(user)
+        if whois['identified']:
+            return  # Skip identified users.
         await bot.message(channel, f"{user}: Welcome to the Fuel Rats! If you are on emergency oxygen "
                                    f"please log out to main menu.  If you need fuel, please let us know "
                                    f"as soon as possible.  If you are interested in joining the cause, "
