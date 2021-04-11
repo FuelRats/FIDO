@@ -25,3 +25,10 @@ def set_config(module, key, value, overwrite=False):
         conf = config.Config(module=module, key=key, value=value)
         session.add(conf)
         session.commit()
+
+
+def del_config(module, key):
+    session = SessionManager().session
+    res = session.query(config.Config).where(config.Config.module == module).\
+        where(config.Config.key == key).delete()
+    session.commit()

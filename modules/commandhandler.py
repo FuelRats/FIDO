@@ -1,7 +1,7 @@
 import fido
 from config import IRC
 from modules.commands import fetch, channels, puppet, mute, unmute, nexmo, monitor, \
-    unmonitor, asn_ban, rcjoin
+    unmonitor, asn_ban, rcjoin, lockdown
 
 commandsDict = {
     "fetch": fetch.invoke,
@@ -16,6 +16,8 @@ commandsDict = {
     "asn_ban": asn_ban.ban_asn,
     "asn_test": asn_ban.test_asn,
     "rcjoin": rcjoin.rcjoin,
+    "lockdown": lockdown.lockdown,
+    "unlock": lockdown.disable_lockdown,
 }
 
 privateCommandsDict = {
