@@ -15,6 +15,7 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
         word = word.lstrip('@')
         for user in bot.channels[channel]['users']:
             if word.startswith(user) and user not in highlighted_users:
+                print(f"Matched as user: {word}")
                 highlighted_users.append(user)
     if len(highlighted_users) >= max_highlight_count:
         await bot.kick(channel, sender, kick_reason)
