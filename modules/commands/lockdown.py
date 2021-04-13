@@ -35,6 +35,8 @@ async def disable_lockdown(bot: fido, channel: str, sender: str, args: List[str]
         await bot.message(channel, "LOCKDOWN: Lockdown isn't enabled, doing nothing.")
     else:
         await bot.message(channel, "LOCKDOWN: Restoring normal operations.")
-        await bot.message("#ratchat", f"*** LOCKDOWN CLEARED *** Normal operations resumed. Channel join restrictions lifted, non-clients will now directly join #ratchat.")
+        await bot.message("#ratchat", f"*** LOCKDOWN CLEARED *** Normal operations resumed. Channel "
+                                      f"join restrictions lifted, non-clients will now directly "
+                                      f"join #ratchat.")
         await bot.raw(f"MODE #ratchat -b ~f:#NewRats:~G:unknown-users\n")
         configmanager.del_config('droneprotection', 'lockdown')

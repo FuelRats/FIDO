@@ -1,12 +1,6 @@
-import re
 import socket
-
-from sqlalchemy import or_
-
-import datetime
 import fido
 import ipaddress
-from config import SessionHandler
 from models import SessionManager
 from models.asn_blacklist import ASNBlacklist
 
@@ -15,7 +9,8 @@ async def protect_banned_asn(bot: fido, nickname, hostmask):
     res, network = await check_ban(bot, nickname, hostmask)
     if res:
         await bot.message("#opers", f"ASN BAN: User {nickname} connecting from "
-                                    f"banned network {network.asn_name} ({network.prefix}/{network.cidr})")
+                                    f"banned network {network.asn}: {network.asn_name} "
+                                    f"({network.prefix}/{network.cidr})")
         await bot.raw(f"GLINE *@{hostmask} 7d You are connecting from a banned VPN network, which is not "
                       f"currently allowed. If you believe this is in error, please contact ops@fuelrats.com\n")
         return True

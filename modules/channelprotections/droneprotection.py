@@ -63,6 +63,8 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
                 await bot.message("#ratchat", f"*** LOCKDOWN INITIATED *** Excessive drones connecting to network, "
                                               f"new connections failing drone scans will now be KILLed. This may cause "
                                               f"clients to not be able to connect.")
+                await bot.raw(f"MODE #ratchat +b ~f:#NewRats:~G:unknown-users\n")
+                await bot.raw(f"MODE #NewRats -i\n")
                 configmanager.set_config('droneprotection', 'lockdown', "True")
         if "Compromised router" in match.group('zone'):
             await bot.message("#ratchat", f"Advisory: Client {match.group('nick')}'s IP address is listed in a "

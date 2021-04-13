@@ -15,6 +15,7 @@ commandsDict = {
     "unmonitor": unmonitor.invoke,
     "asn_ban": asn_ban.ban_asn,
     "asn_test": asn_ban.test_asn,
+    "asn_unban": asn_ban.unban_asn,
     "rcjoin": rcjoin.rcjoin,
     "lockdown": lockdown.lockdown,
     "unlock": lockdown.disable_lockdown,
