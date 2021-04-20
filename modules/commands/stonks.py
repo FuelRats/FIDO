@@ -19,13 +19,14 @@ async def crypto_compare(bot: fido, channel: str, sender: str, args: List[str]):
         await bot.message(channel, "This command can only be used in certain channels.")
         return
     if len(args) == 1:
-        price = cryptocompare.get_price(args[0], 'USD')[args[0]]['USD']
+
+        price = cryptocompare.get_price(args[0].upper(), 'USD')[args[0]]['USD']
         if price:
             await bot.message(channel, f"{args[0].upper()} is currently trading at {price} USD")
         else:
-            await bot.message(channel, f"Unknown currency {args[0]}")
+            await bot.message(channel, f"Unknown currency {args[0].upper()}")
     elif len(args) == 2:
-        price = cryptocompare.get_price(args[0], args[1])[args[0]][args[1]]
+        price = cryptocompare.get_price(args[0].upper(), args[1].upper())[args[0]][args[1]]
         if price:
             await bot.message(channel, f"{args[0].upper()} is currently trading at {price} {args[1].upper()}")
     else:
@@ -42,14 +43,14 @@ async def crypto_value(bot: fido, channel: str, sender: str, args: List[str]):
         await bot.message(channel, "This command can only be used in certain channels.")
         return
     if len(args) == 2:
-        price = cryptocompare.get_price(args[1], 'USD')[args[1]]['USD']
+        price = cryptocompare.get_price(args[1].upper(), 'USD')[args[1]]['USD']
         if price:
             value = price * float(args[0])
             await bot.message(channel, f"{args[0]} {args[1].upper()} is currently worth {value} USD")
         else:
-            await bot.message(channel, f"Unknown currency {args[1]}")
+            await bot.message(channel, f"Unknown currency {args[1].upper()}")
     elif len(args) == 3:
-        price = cryptocompare.get_price(args[1], args[2])[args[1]][args[2]]
+        price = cryptocompare.get_price(args[1].upper(), args[2].upper())[args[1]][args[2]]
         if price:
             value = price * float(args[0])
             await bot.message(channel, f"{args[0]} {args[1].upper()} is currently worth {value} {args[2].upper()}")
