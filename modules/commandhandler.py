@@ -1,7 +1,7 @@
 import fido
 from config import IRC
 from modules.commands import fetch, channels, puppet, mute, unmute, nexmo, monitor, \
-    unmonitor, asn_ban, rcjoin, lockdown
+    unmonitor, asn_ban, rcjoin, lockdown, stonks
 
 commandsDict = {
     "fetch": fetch.invoke,
@@ -19,6 +19,9 @@ commandsDict = {
     "rcjoin": rcjoin.rcjoin,
     "lockdown": lockdown.lockdown,
     "unlock": lockdown.disable_lockdown,
+    "value": stonks.crypto_value,
+    "compare": stonks.crypto_compare,
+    "ticker": stonks.ticker_info,
 }
 
 privateCommandsDict = {
