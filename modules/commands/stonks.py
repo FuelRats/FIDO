@@ -45,14 +45,14 @@ async def crypto_value(bot: fido, channel: str, sender: str, args: List[str]):
         price = cryptocompare.get_price(args[1], 'USD')[args[1]]['USD']
         if price:
             value = price * float(args[0])
-            await bot.message(channel, f"{args[0]} {args[1].upper()} is currently worth ${value} USD")
+            await bot.message(channel, f"{args[0]} {args[1].upper()} is currently worth {value} USD")
         else:
             await bot.message(channel, f"Unknown currency {args[1]}")
     elif len(args) == 3:
         price = cryptocompare.get_price(args[1], args[2])[args[1]][args[2]]
         if price:
             value = price * float(args[0])
-            await bot.message(channel, f"{args[0]} {args[1].upper()} is currently worth ${value} {args[1].upper()}")
+            await bot.message(channel, f"{args[0]} {args[1].upper()} is currently worth {value} {args[2].upper()}")
     else:
         await bot.message(channel, "Please provide only 2 or 3 arguments, the first "
                                    "being the value, the second the crypto and the optional third another currency.")
