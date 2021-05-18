@@ -36,7 +36,8 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     if nick in bot.users:
         whois = await bot.whois(nick)
         ip = bot.users[nick]['real_ip_address']
-        mon = monitor.Monitor(timestamp=timestamp, nickname=nick, msg=message or "No reason given")
+        mon = monitor.Monitor(timestamp=timestamp, nickname=nick, msg=f"Reason: {message} ({sender})"
+                                                                      or f"No reason given ({sender})")
         try:
             session.add(mon)
             session.commit()

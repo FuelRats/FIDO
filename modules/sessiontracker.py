@@ -114,7 +114,7 @@ async def check_clone(bot: fido, nickname, hostmask):
     sus_nicks = session.query(monitor.Monitor.nickname).filter(monitor.Monitor.nickname == nickname).one_or_none()
     if sus_nicks:
         print(f"Sus nick found!")
-        await bot.message("#rat-ops", f"Monitored nick {nickname} has come online.")
+        await bot.message("#rat-ops", f"Monitored nick {nickname} has come online. {sus_nicks.msg or ''}")
 
     clonenicks, lasttime = is_clone(nickname, hostmask, True)
     if clonenicks is not None and lasttime is not None:
