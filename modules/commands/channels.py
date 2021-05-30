@@ -1,9 +1,11 @@
 from typing import List
 
 import fido
+from modules.access import require_permission, Levels
 from models import SessionManager, config
 
 
+@require_permission(level=Levels.OP, message='You must be an op to make FIDO join channels.')
 async def join_channel(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !join command
@@ -24,6 +26,7 @@ async def join_channel(bot: fido, channel: str, sender: str, args: List[str]):
         await bot.message(channel, f"Joined: {', '.join(channels)}.")
 
 
+@require_permission(level=Levels.OP, message='You must be an op to make FIDO join channels.')
 async def part_channel(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !part command
