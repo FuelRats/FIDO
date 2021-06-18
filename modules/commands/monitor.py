@@ -44,7 +44,21 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             bot.monitor(nick)
         except:
             print("Failed to insert!")
+            await bot.message(channel, f"Database error while adding monitor nick.")
             session.rollback()
         await bot.message(channel, f"I am now monitoring for {nick} and possible clones.")
     else:
+        timestamp = datetime.now()
+        nick = args[0]
+        message = ' '.join(args[1:])
+        mon = monitor.Monitor(timestamp=timestamp, nickname=nick, msg=f"Reason: {message} ({sender})"
+                                                                      or f"No reason given ({sender})")
+        try:
+            session.add(mon)
+            session.commit()
+            bot.monitor(nick)
+        except:
+            print("Failed to insert!")
+            await bot.message(channel, f"Database error while adding monitor nick.")
+            session.rollback()
         await bot.message(channel, f"Nickname not found online, but I'll keep an eye out for that exact name.")

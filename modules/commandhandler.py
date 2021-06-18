@@ -12,6 +12,7 @@ commandsDict = {
     "nexmoadd": nexmo.groupadd,
     "nexmosend": nexmo.sendmessage,
     "monitor": monitor.invoke,
+    "watch": monitor.invoke,
     "unmonitor": unmonitor.invoke,
     "asn_ban": asn_ban.ban_asn,
     "asn_test": asn_ban.test_asn,
