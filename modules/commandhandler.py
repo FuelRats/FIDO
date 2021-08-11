@@ -5,6 +5,7 @@ from modules.commands import fetch, channels, puppet, mute, unmute, nexmo, monit
 
 commandsDict = {
     "fetch": fetch.invoke,
+    "geoip": fetch.invoke,
     "join": channels.join_channel,
     "part": channels.part_channel,
     "mute": mute.invoke,
