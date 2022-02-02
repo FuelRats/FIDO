@@ -23,5 +23,7 @@ async def handle_notice(bot: fido, message: str):
 
     for key in noticesDict:
         match = re.match(key, message)
+        print(f"Matching {key}")
         if match:
+            print(f"Matched {key}")
             await noticesDict[key](bot, message, match)
