@@ -10,8 +10,7 @@ regex = re.compile(
 
 qline = re.compile(
     '.* Forbidding Q-lined nick (?P<nick>[A-Za-z0-9_´|\[\]]*) from \[(?P<host>[0-9.:A-F-a-f]*)\] '
-    '\((?P<reason>.*)\)',
-)
+    '\((?P<reason>.*)\)', re.I)
 
 
 async def on_connect(bot: fido, message: str, match):
