@@ -6,6 +6,7 @@ from modules.notices import kill, connect, oper, spamfilter, lines
 noticesDict = {
     kill.regex: kill.on_kill,
     connect.regex: connect.on_connect,
+    connect.qline: connect.on_qline,
     oper.regex: oper.on_oper_fail,
     spamfilter.regex: spamfilter.on_spamfilter_trigger,
     lines.regex: lines.on_gline,
