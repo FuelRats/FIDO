@@ -10,7 +10,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-@require_permission(level=Levels.OP, message='DENIED!')
+@require_permission(level=Levels.HALFOP, message='DENIED!')
 async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Unmute a nick.
