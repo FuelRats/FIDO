@@ -24,8 +24,6 @@ commandsDict = {
     "value": stonks.crypto_value,
     "compare": stonks.crypto_compare,
     "ticker": stonks.ticker_info,
-    "puppet_allow": puppet.authorize_host,
-    "puppet_disallow": puppet.deauthorize_host,
 }
 
 privateCommandsDict = {
