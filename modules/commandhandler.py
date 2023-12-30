@@ -24,6 +24,8 @@ commandsDict = {
     "value": stonks.crypto_value,
     "compare": stonks.crypto_compare,
     "ticker": stonks.ticker_info,
+    "puppet_allow": puppet.authorize_host,
+    "puppet_disallow": puppet.deauthorize_host,
 }
 
 privateCommandsDict = {
@@ -48,9 +50,9 @@ async def on_channel_message(bot: fido, channel: str, sender: str, message: str)
 
         # Start Commands
         if command in commandsDict:
-            return await commandsDict[command](bot, channel, sender, arguments)
-        else:
-            return False
+            output = await commandsDict[command](bot, channel, sender, arguments)
+            if output:
+                await bot.message(channel, output)
 
 
 async def on_private_message(bot: fido, sender: str, message: str):
@@ -61,10 +63,9 @@ async def on_private_message(bot: fido, sender: str, message: str):
 
     parts = message[1:].split(" ")
     command = parts[0]
-    channel = parts[1]
-    arguments = parts[2:]
+    arguments = parts[1:]
 
-    if command in commandsDict:
-        return await commandsDict[command](bot, channel, sender, arguments)
-    elif command in privateCommandsDict:
-        return await privateCommandsDict[command](bot, channel, sender, arguments)
+    if command in privateCommandsDict:
+        output = await privateCommandsDict[command](bot, sender, arguments)
+        if output:
+            await bot.message(sender, output)
