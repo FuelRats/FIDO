@@ -17,22 +17,22 @@ async def puppet(bot: fido, sender: str, args: List[str], is_act: bool):
         command = "act" if is_act else "say"
         return f"Usage: {IRC.commandPrefix}{command} <channel> <message>"
 
-    hostname = bot.users[sender]["hostname"]
     channel = get_channel(bot, args[0])
     message = ' '.join(args[1:])
+
     try:
         permission_channel = configmanager.get_config("channels", "puppet_permission")[0]
     except IndexError:
         return
 
-    if get_access_level(bot, permission_channel, sender).value <= Levels.OP.value:
+    if get_access_level(bot, permission_channel, sender).value < Levels.OP.value:
         return "Permission denied"
 
     if channel is None:
         return "Invalid channel"
 
     if is_act:
-        await bot.ctcp(channel, "ACTION", contents=message)
+        await bot.ctcp(channel, "ACTION", message)
     else:
         await bot.message(channel, message)
 
