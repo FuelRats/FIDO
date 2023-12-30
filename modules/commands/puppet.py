@@ -2,9 +2,8 @@ from typing import List
 
 import fido
 from config import IRC
-from models import SessionManager, config
 from modules import configmanager
-from modules.access import require_permission, Levels
+from modules.access import Levels, get_access_level
 
 
 def get_channel(bot: fido, channel: str):
@@ -21,15 +20,16 @@ async def puppet(bot: fido, sender: str, args: List[str], is_act: bool):
     hostname = bot.users[sender]["hostname"]
     channel = get_channel(bot, args[0])
     message = ' '.join(args[1:])
-    operchannel = bot.get_oper_channel()
+    try:
+        permission_channel = configmanager.get_config("channels", "puppet_permission")[0]
+    except IndexError:
+        return
 
-    if hostname not in configmanager.get_config("puppet", "authorizedhost"):
-        return f"Permission denied"
+    if get_access_level(bot, permission_channel, sender).value <= Levels.OP.value:
+        return "Permission denied"
 
     if channel is None:
         return "Invalid channel"
-
-    await bot.message(operchannel, f"Puppet in {channel} by {sender}")
 
     if is_act:
         await bot.ctcp(channel, "ACTION", contents=message)
@@ -43,32 +43,3 @@ async def act(bot: fido, sender: str, args: List[str]):
 
 async def say(bot: fido, sender: str, args: List[str]):
     return await puppet(bot, sender, args, False)
-
-
-@require_permission(level=Levels.OP, message="Permission denied!")
-async def authorize_host(bot: fido, channel: str, sender: str,
-                         args: List[str]):
-    if len(args) != 1:
-        return f"Usage: {IRC.commandPrefix}puppet_allow <host>"
-
-    host = args[0]
-
-    session = SessionManager().session
-    authorized_host = config.Config(module='puppet', key='authorizedhost', value=host)
-    session.add(authorized_host)
-    session.commit()
-    return f"Host {host} may now use the puppet module"
-
-
-@require_permission(level=Levels.OP, message="Permission denied!")
-async def deauthorize_host(bot: fido, channel: str, sender: str,
-                           args: List[str]):
-    if len(args) != 1:
-        return f"Usage: {IRC.commandPrefix}puppet_disallow <host>"
-
-    host = args[0]
-
-    session = SessionManager().session
-    session.query(config.Config).filter_by(module='puppet', key='authorizedhost', value=host).delete()
-    session.commit()
-    return f"Host {host} may no longer use the puppet module"
