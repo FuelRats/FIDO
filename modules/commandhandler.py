@@ -1,5 +1,6 @@
 import fido
 from config import IRC
+from modules import configmanager
 from modules.commands import fetch, channels, puppet, mute, unmute, nexmo, monitor, \
     unmonitor, asn_ban, rcjoin, lockdown, stonks
 
@@ -42,6 +43,10 @@ async def on_channel_message(bot: fido, channel: str, sender: str, message: str)
     :return: the reply to be sent to the sender
     """
     if message.startswith(IRC.commandPrefix):
+        bot_hosts = configmanager.get_config("commandhandler", "bothost")
+        if bot.users[sender]["hostname"] in bot_hosts:
+            # Ignore commands sent by other bots
+            return
         parts = message[1:].split(" ")
         command = parts[0]
         arguments = parts[1:]

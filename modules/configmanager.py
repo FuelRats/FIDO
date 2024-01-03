@@ -13,7 +13,7 @@ def get_config(module, key):
     print("CM running: ")
     for result in session.query(config.Config).filter_by(module=module, key=key):
         ret.append(result.value)
-    return ret or None
+    return ret
 
 
 def set_config(module, key, value, overwrite=False):
