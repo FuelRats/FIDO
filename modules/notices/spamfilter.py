@@ -2,7 +2,7 @@ import re
 import fido
 from modules.nexmo import send_to_group
 
-regex = re.compile('\[Spamfilter\] (?P<nick>[A-Za-z0-9_´|\[\]]*)!(?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*) matches filter \'(?P<filter>.*)\': \[cmd: PRIVMSG (?P<target>[A-Za-z0-9#_`\[\]]*): '.*'\] \[reason: (?P<message>[A-Za-z0-9]* .*)]')
+regex = re.compile("\[Spamfilter\] (?P<nick>[A-Za-z0-9_´|\[\]]*)!(?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*) matches filter \'(?P<filter>.*)\': \[cmd: PRIVMSG (?P<target>[A-Za-z0-9#_`\[\]]*): '.*'\] \[reason: (?P<message>[A-Za-z0-9]* .*)]")
 
 
 async def on_spamfilter_trigger(bot: fido, message, match):
