@@ -31,7 +31,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             mutetime = session.query(config.Config).\
                 filter_by(module='channelprotection', key='mutetime').one_or_none()
             await bot.set_mode(channel, "-v", f"{bot.users[arg]['nickname']}")
-            await bot.set_mode(channel, "+b", f"~t:{mutetime.value or 6}:*!*@{bot.users[arg]['hostname']}")
+            await bot.set_mode(channel, "+b", f"~t:{mutetime.value or 6}:~quiet:*!*@{bot.users[arg]['hostname']}")
             # await bot.rawmsg("MODE", f":#help +b ~t:{mutetime.value or 6}:~q:*!*@{bot.users[arg]['hostname']}")
             await bot.message(channel, f"Muted {bot.users[arg]['nickname']} for {mutetime.value or 6} minutes.")
             log.info(f"{bot.users[arg]['nickname']} was muted for {mutetime.value or 6} minutes by {sender}")
