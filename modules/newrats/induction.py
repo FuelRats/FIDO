@@ -3,8 +3,6 @@ import fido
 
 
 async def on_join(bot: fido, channel: str, user: str):
-    if user == 'FIDO[BOT]':
-        return  # Yah, don't greet yourself, you silly bot.
     if channel == '#NewRats':
         whois = await bot.whois(user)
         if whois['identified']:

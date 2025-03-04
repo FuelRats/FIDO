@@ -55,6 +55,8 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_join(self, channel, user):
         await super().on_join(channel, user)
+        if user == self.nickname:
+            return
         await induction.on_join(self, channel, user)
         # TODO: Maybe session cache here instead?
 
@@ -65,6 +67,8 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_channel_message(self, target, nick, message):
         await super().on_channel_message(target, nick, message)
+        if nick == self.nickname:
+            return
         await channelprotectionhandler.handle_message(self, target, nick, message)
         await commandHandler.on_channel_message(self, target, nick, message)
 
@@ -75,6 +79,8 @@ class FIDO(pydle.Client):
     @pydle.coroutine
     async def on_ctcp(self, by, target, what, contents):
         await super().on_ctcp(by, target, what, contents)
+        if by == self.nickname:
+            return
         if what == 'ACTION':
             await channelprotectionhandler.handle_message(self, target, by, contents)
 

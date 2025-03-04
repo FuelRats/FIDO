@@ -23,6 +23,25 @@ class Levels(Enum):
     NONE = 0
 
 
+def get_access_level(bot: fido, channel: str, nick: str) -> Levels:
+    """
+    Gets the access level of a user
+    :param bot: Bot instance
+    :param channel: Channel to check permission in
+    :param nick: Nick of user
+    :return: The user's access level
+    """
+    modes = bot.channels[channel]['modes']
+    maxlevel = Levels.NONE
+    for mode in modes:
+        if modes[mode] is True:  # Skip channel modes.
+            continue
+        if nick in modes[mode] and levels[mode] > maxlevel.value:
+            maxlevel = Levels(levels[mode])
+            print(f"Maxlevel now {maxlevel}")
+    return maxlevel
+
+
 def require_permission(level: Levels, above: bool = True, message: str = None):
     """
     Requires the invoking user to have a specified privilege level
@@ -38,14 +57,7 @@ def require_permission(level: Levels, above: bool = True, message: str = None):
             if channel not in bot.channels:
                 return None
             print(f"Modes: {bot.channels[channel]['modes']}")
-            modes = bot.channels[channel]['modes']
-            maxlevel: Levels = Levels.NONE
-            for mode in modes:
-                if modes[mode] == True:  # Skip channel modes. Non-empty list being truthy, we test == True.
-                    continue
-                if nick in modes[mode] and levels[mode] > maxlevel.value:
-                    maxlevel = Levels(levels[mode])
-                    print(f"Maxlevel now {maxlevel}")
+            maxlevel = get_access_level(bot, channel, nick)
             print(f"Required level {level.value} and maxlevel {maxlevel.value}")
             if (above and maxlevel.value < level.value) or (not above and maxlevel.value > level.value):
                 if message:

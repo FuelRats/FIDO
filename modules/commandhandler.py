@@ -1,5 +1,6 @@
 import fido
 from config import IRC
+from modules import configmanager
 from modules.commands import fetch, channels, puppet, mute, unmute, nexmo, monitor, \
     unmonitor, asn_ban, rcjoin, lockdown, stonks
 
@@ -42,15 +43,19 @@ async def on_channel_message(bot: fido, channel: str, sender: str, message: str)
     :return: the reply to be sent to the sender
     """
     if message.startswith(IRC.commandPrefix):
+        bot_hosts = configmanager.get_config("commandhandler", "bothost")
+        if bot.users[sender]["hostname"] in bot_hosts:
+            # Ignore commands sent by other bots
+            return
         parts = message[1:].split(" ")
         command = parts[0]
         arguments = parts[1:]
 
         # Start Commands
         if command in commandsDict:
-            return await commandsDict[command](bot, channel, sender, arguments)
-        else:
-            return False
+            output = await commandsDict[command](bot, channel, sender, arguments)
+            if output:
+                await bot.message(channel, output)
 
 
 async def on_private_message(bot: fido, sender: str, message: str):
@@ -61,10 +66,9 @@ async def on_private_message(bot: fido, sender: str, message: str):
 
     parts = message[1:].split(" ")
     command = parts[0]
-    channel = parts[1]
-    arguments = parts[2:]
+    arguments = parts[1:]
 
-    if command in commandsDict:
-        return await commandsDict[command](bot, channel, sender, arguments)
-    elif command in privateCommandsDict:
-        return await privateCommandsDict[command](bot, channel, sender, arguments)
+    if command in privateCommandsDict:
+        output = await privateCommandsDict[command](bot, sender, arguments)
+        if output:
+            await bot.message(sender, output)
