@@ -1,7 +1,7 @@
 import re
 
 import fido
-from modules.notices import kill, connect, oper, spamfilter, lines
+from modules.notices import kill, connect, oper, spamfilter, lines, link
 
 noticesDict = {
     kill.regex: kill.on_kill,
@@ -11,6 +11,9 @@ noticesDict = {
     spamfilter.regex: spamfilter.on_spamfilter_trigger,
     lines.regex: lines.on_gline,
     lines.perma: lines.on_perma,
+    link.regex_disconnected: link.regex_disconnected,
+    link.regex_unreliable: link.on_unreliable,
+    link.regex_linked: link.on_linked,
 }
 
 
