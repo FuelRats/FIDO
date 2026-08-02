@@ -41,7 +41,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         try:
             session.add(mon)
             session.commit()
-            bot.monitor(nick)
+            await bot.monitor(nick)
         except:
             print("Failed to insert!")
             await bot.message(channel, f"Database error while adding monitor nick.")
@@ -56,7 +56,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         try:
             session.add(mon)
             session.commit()
-            bot.monitor(nick)
+            await bot.monitor(nick)
         except:
             print("Failed to insert!")
             await bot.message(channel, f"Database error while adding monitor nick.")

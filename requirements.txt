@@ -1,7 +1,7 @@
-sqlalchemy
+sqlalchemy<2.0
 requests
 pyopenssl
-pydle
+pydle>=1.1.0
 nexmo
 cryptocompare
 yfinance
