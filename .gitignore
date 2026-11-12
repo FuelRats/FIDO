@@ -4,4 +4,3 @@ venv/
 FIDO.log
 *.sqlite
 *.pyc
-config.py

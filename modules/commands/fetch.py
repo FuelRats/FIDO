@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from config import IRC
 import requests
@@ -9,6 +10,8 @@ from modules.access import require_permission, Levels
 import logging
 
 log = logging.getLogger(__name__)
+
+HTTP_TIMEOUT = 10  # seconds
 
 
 @require_permission(level=Levels.OP, message='DENIED!')
@@ -25,7 +28,7 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     if len(args) == 0:
         return "Usage: " + IRC.commandPrefix + "fetch <ip adress1|nickname> [<ip address2> <ip address3> ...]"
     if channel not in ['#opers', '#rat-ops', '#operations']:
-        print(f"Denied usage because channel is {channel}")
+        log.info(f"Denied usage because channel is {channel}")
         await bot.message(channel, "This command can only be used in certain channels.")
         return
     lines = []
@@ -42,7 +45,9 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             except ValueError:
                 return arg + " is an invalid IP Address"
         try:
-            response = requests.get(f'https://ipinfo.io/{ip}', headers={'Accept': 'application/json'}).json()
+            response = (await asyncio.to_thread(requests.get, f'https://ipinfo.io/{ip}',
+                                                headers={'Accept': 'application/json'},
+                                                timeout=HTTP_TIMEOUT)).json()
         except SSLError:
             await bot.message(channel, "An SSL error occurred while trying to retrieve IP information.")
             return

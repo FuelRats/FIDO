@@ -1,10 +1,7 @@
-from typing import List
-from models import config, SessionManager
+from modules import configmanager
 
-import codecs
 import fido
 import math
-import re
 import sys
 import unicodedata
 
@@ -40,8 +37,7 @@ def is_zalgo(s):
 
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
-    session = SessionManager().session
-    kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value
+    kick_reason: str = configmanager.get_value('channelprotection', 'reason')
 
     if is_zalgo(unicodedata.normalize('NFD', message)):
         await bot.kick(channel, sender, kick_reason)

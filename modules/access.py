@@ -1,6 +1,9 @@
 import functools
+import logging
 from enum import Enum
 import fido
+
+log = logging.getLogger(__name__)
 
 levels = {
     "q": 5,  # q owner
@@ -38,7 +41,7 @@ def get_access_level(bot: fido, channel: str, nick: str) -> Levels:
             continue
         if nick in modes[mode] and levels[mode] > maxlevel.value:
             maxlevel = Levels(levels[mode])
-            print(f"Maxlevel now {maxlevel}")
+            log.debug(f"Maxlevel now {maxlevel}")
     return maxlevel
 
 
@@ -56,9 +59,9 @@ def require_permission(level: Levels, above: bool = True, message: str = None):
         async def guarded(bot: fido, channel: str, nick: str, *args, **kwargs):
             if channel not in bot.channels:
                 return None
-            print(f"Modes: {bot.channels[channel]['modes']}")
+            log.debug(f"Modes: {bot.channels[channel]['modes']}")
             maxlevel = get_access_level(bot, channel, nick)
-            print(f"Required level {level.value} and maxlevel {maxlevel.value}")
+            log.debug(f"Required level {level.value} and maxlevel {maxlevel.value}")
             if (above and maxlevel.value < level.value) or (not above and maxlevel.value > level.value):
                 if message:
                     await bot.message(channel, message)

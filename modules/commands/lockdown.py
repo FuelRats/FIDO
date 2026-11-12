@@ -1,10 +1,6 @@
 from typing import List
-from config import IRC
-import requests
-import ipaddress
 import fido
 from modules.access import require_permission, Levels
-from models import SessionManager, config
 from modules import configmanager
 
 import logging

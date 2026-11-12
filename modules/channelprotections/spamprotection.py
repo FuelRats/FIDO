@@ -1,9 +1,10 @@
-import time
-from typing import List
 import datetime
+import logging
 import fido
-from models import config, SessionManager, messagecounter
-from modules.access import require_permission, Levels
+from models import messagecounter, session_scope
+from modules import configmanager
+
+log = logging.getLogger(__name__)
 
 levels = {
     "q": 5,  # q owner
@@ -16,17 +17,14 @@ levels = {
 
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
-    session = SessionManager().session
-    kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value
-    maxmessages: int = int(
-        session.query(config.Config).filter_by(module='channelprotection', key='maxmessages')[0].value)
-    retention_time: int = int(
-        session.query(config.Config).filter_by(module='channelprotection', key='messageinterval')[0].value)
+    kick_reason: str = configmanager.get_value('channelprotection', 'reason')
+    maxmessages: int = int(configmanager.get_value('channelprotection', 'maxmessages'))
+    retention_time: int = int(configmanager.get_value('channelprotection', 'messageinterval'))
 
     # Clear buffer of old messages
     delta = datetime.datetime.now() - datetime.timedelta(seconds=retention_time)
-    session.query(messagecounter.Messagecounter).filter(messagecounter.Messagecounter.timestamp <= delta).delete()
-    session.commit()
+    with session_scope() as session:
+        session.query(messagecounter.Messagecounter).filter(messagecounter.Messagecounter.timestamp <= delta).delete()
     if sender in ['MechaSqueak[BOT]', 'RatMama[BOT]', 'FIDO[BOT]']:
         # Do not smack the bots, ever. Also, don't add their messages.
         return
@@ -35,18 +33,19 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
         if modes[mode] == True:  # Skip channel modes. Non-empty list being truthy, we test == True.
             continue
         if sender in modes[mode] and levels[mode] > 2:
-            print("Ignored because halfop or higher.")
+            log.debug("Ignored because halfop or higher.")
             return
-    msgs = session.query(messagecounter.Messagecounter).filter(messagecounter.Messagecounter.nickname == sender).count()
-    print(f"Msgcount: {msgs}")
+    with session_scope() as session:
+        msgs = session.query(messagecounter.Messagecounter).filter(messagecounter.Messagecounter.nickname == sender).count()
+    log.debug(f"Msgcount: {msgs}")
     # TODO: This should honestly get us the modes for the user, but apparently not?
     # uinfo = await bot.whois(sender)
-    # print(f"Userinfo: {uinfo}")
+    # log.debug(f"Userinfo: {uinfo}")
 
     if msgs > maxmessages:
 
         await bot.kick(channel, sender, kick_reason)
         await bot.message("#opers", f"{sender} was kicked from {channel} for spamming.")
     msg = messagecounter.Messagecounter(timestamp=datetime.datetime.now(), nickname=sender, hostmask=sender, msg='Placeholder')
-    session.add(msg)
-    session.commit()
+    with session_scope() as session:
+        session.add(msg)

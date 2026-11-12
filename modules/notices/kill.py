@@ -1,6 +1,5 @@
 import re
 import fido
-from models import SessionManager, config
 
 regex = re.compile(
     '.* Received KILL message for (?P<nick>[A-Za-z0-9_´|\[\]]*) \((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) from (?P<sender>[A-Za-z0-9_´|\[\]]*): (?P<reason>.*)$',

@@ -1,6 +1,5 @@
 import re
 import fido
-from models import SessionManager, config
 
 regex = re.compile('.* G-Line added for (?P<user>[A-Za-z0-9_´|\*\[\]].*)@(?P<host>[A-Za-z0-9.:_\-].*) on '
                    '(?P<timestamp>.*) \(from (?P<sender>[A-Za-z0-9_´|\[\]].*) to expire at (?P<expiration>.*): '

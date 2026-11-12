@@ -1,4 +1,4 @@
-import re
+import logging
 import socket
 
 from sqlalchemy import or_
@@ -7,8 +7,9 @@ import datetime
 import fido
 import ipaddress
 from config import SessionHandler
-from models import SessionManager
-from models import ircsessions, monitor
+from models import ircsessions, monitor, session_scope
+
+log = logging.getLogger(__name__)
 
 
 def is_clone(nickname, hostmask, withdate=False):
@@ -20,8 +21,11 @@ def is_clone(nickname, hostmask, withdate=False):
     :param nickname: Nickname of user
     :return: A list of nicknames previously used if the user is a clone, or None.
     """
-    sessionmanager = SessionManager()
-    session = sessionmanager.session
+    with session_scope() as session:
+        return _is_clone(session, nickname, hostmask, withdate)
+
+
+def _is_clone(session, nickname, hostmask, withdate):
     timestamp = datetime.datetime.now()
     try:
         ip = ipaddress.ip_address(hostmask)
@@ -29,8 +33,8 @@ def is_clone(nickname, hostmask, withdate=False):
         try:
             ip = ipaddress.ip_address(socket.gethostbyname(hostmask))
         except socket.gaierror:
-            print(f"Unable to make sense of hostmask: {hostmask}")
-    print(f"IP version: {ip.version}")
+            log.warning(f"Unable to make sense of hostmask: {hostmask}")
+    log.debug(f"IP version: {ip.version}")
     if ip.version == 6:
         network = ipaddress.ip_network(f"{hostmask}/56", False)
     else:
@@ -45,7 +49,7 @@ def is_clone(nickname, hostmask, withdate=False):
         for row in prevclients:
 
             if row.nickname == client.nickname and row.hostmask == client.hostmask:
-                print("Same nick from same IP, update timestamp.")
+                log.debug("Same nick from same IP, update timestamp.")
                 row.timestamp = timestamp
                 # session.query(ircsessions.IRCSessions).filter(ircsessions.IRCSessions.id == row.id). \
                 #     update({'timestamp': timestamp})
@@ -55,24 +59,24 @@ def is_clone(nickname, hostmask, withdate=False):
                     return None, None
                 return None
             elif row.nickname == client.nickname and row.hostmask != client.hostmask:
-                print("Same nick from different IP, store!")
+                log.debug("Same nick from different IP, store!")
                 session.add(client)
                 session.commit()
                 if withdate:
                     return None, None
                 return None
             elif row.nickname != client.nickname and row.hostmask == client.hostmask:
-                print("Different nick from same IP, report!")
+                log.debug("Different nick from same IP, report!")
                 if withdate:
                     lasttime = row.timestamp
                 clonenicks.append(row.nickname)
                 session.add(client)
             elif row.hostmask in networks.network:
-                print("Same network!")
+                log.debug("Same network!")
         if clonenicks:
             set_unique = set(clonenicks)
             clones = list(set_unique)
-            print(f"Clones: {clones} Lasttime: {lasttime}")
+            log.debug(f"Clones: {clones} Lasttime: {lasttime}")
             session.commit()
             if withdate:
                 return clones, lasttime
@@ -91,7 +95,7 @@ def is_clone(nickname, hostmask, withdate=False):
         oldrecords = session.query(ircsessions.IRCSessions). \
             filter(ircsessions.IRCSessions.timestamp < timeout)
         if oldrecords.count() > 0:
-            print(f"Deleting {oldrecords.count()} old sessions.")
+            log.info(f"Deleting {oldrecords.count()} old sessions.")
             session.query(ircsessions.IRCSessions). \
                 filter(ircsessions.IRCSessions.timestamp < timeout).delete()
             session.commit()
@@ -108,12 +112,10 @@ async def check_clone(bot: fido, nickname, hostmask):
     :param hostmask: Hostmask (Or rather just IP) of user
     :return: Nothing.
     """
-    sessionmanager = SessionManager()
-    session = sessionmanager.session
-    print(f"Nick: {nickname} Host: {hostmask}")
-    sus_nicks = session.query(monitor.Monitor.nickname).filter(monitor.Monitor.nickname == nickname).first()
+    with session_scope() as session:
+        sus_nicks = session.query(monitor.Monitor.nickname).filter(monitor.Monitor.nickname == nickname).first()
     if sus_nicks:
-        print(f"Sus nick found!")
+        log.debug("Sus nick found!")
         await bot.message("#rat-ops", f"Monitored nick {nickname} has come online. "
                                       f"({sus_nicks.msg or ''})")
 
@@ -121,7 +123,8 @@ async def check_clone(bot: fido, nickname, hostmask):
     if clonenicks is not None and lasttime is not None:
         set_unique = set(clonenicks)
         clones = list(set_unique)
-        res = session.query(monitor.Monitor.nickname).all()
+        with session_scope() as session:
+            res = session.query(monitor.Monitor.nickname).all()
         sus_nicks = [value for value, in res]  # Why the fuck do I need to flatten this, SQLAlchemy?
         for sus in sus_nicks:
             if sus in clones:

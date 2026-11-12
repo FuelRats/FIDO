@@ -1,10 +1,8 @@
 from typing import List
 from config import IRC
-import requests
-import ipaddress
 import fido
 from modules.access import require_permission, Levels
-from models import config, SessionManager
+from models import config, session_scope
 import logging
 import re
 
@@ -39,9 +37,9 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             mutetime = time_value * 1440
         args = args[1:]
     else:
-        session = SessionManager().session
-        mutetime = session.query(config.Config).filter_by(module='channelprotection',
-                                                          key='mutetime').one_or_none().value or 6
+        with session_scope() as session:
+            mutetime = session.query(config.Config).filter_by(module='channelprotection',
+                                                              key='mutetime').one_or_none().value or 6
 
     log.debug(f"Processing {args}")
     for arg in args:

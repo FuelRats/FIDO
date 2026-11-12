@@ -1,14 +1,12 @@
 from typing import List
 
 import fido
-from models import config, SessionManager
+from modules import configmanager
 
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
-    session = SessionManager().session
-    kick_reason: str = session.query(config.Config).filter_by(module='channelprotection', key='reason')[0].value
-    max_highlight_count: int = int(
-        session.query(config.Config).filter_by(module='channelprotection', key='maxhighlightcount')[0].value)
+    kick_reason: str = configmanager.get_value('channelprotection', 'reason')
+    max_highlight_count: int = int(configmanager.get_value('channelprotection', 'maxhighlightcount'))
 
     highlighted_users: List[str] = []
     channel_users = [x.lower() for x in bot.channels[channel]['users']]

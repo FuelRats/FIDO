@@ -1,8 +1,8 @@
 import fido
 from config import IRC
 from modules import configmanager
-from modules.commands import fetch, channels, puppet, mute, unmute, nexmo, monitor, \
-    unmonitor, asn_ban, rcjoin, lockdown, stonks
+from modules.commands import fetch, channels, puppet, mute, unmute, monitor, \
+    unmonitor, asn_ban, rcjoin, lockdown
 
 commandsDict = {
     "fetch": fetch.invoke,
@@ -11,8 +11,6 @@ commandsDict = {
     "part": channels.part_channel,
     "mute": mute.invoke,
     "unmute": unmute.invoke,
-    "nexmoadd": nexmo.groupadd,
-    "nexmosend": nexmo.sendmessage,
     "monitor": monitor.invoke,
     "watch": monitor.invoke,
     "unmonitor": unmonitor.invoke,
@@ -22,9 +20,6 @@ commandsDict = {
     "rcjoin": rcjoin.rcjoin,
     "lockdown": lockdown.lockdown,
     "unlock": lockdown.disable_lockdown,
-    "value": stonks.crypto_value,
-    "compare": stonks.crypto_compare,
-    "ticker": stonks.ticker_info,
 }
 
 privateCommandsDict = {

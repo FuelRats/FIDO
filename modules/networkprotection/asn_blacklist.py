@@ -1,8 +1,11 @@
+import logging
 import socket
 import fido
 import ipaddress
-from models import SessionManager
+from models import session_scope
 from models.asn_blacklist import ASNBlacklist
+
+log = logging.getLogger(__name__)
 
 
 async def protect_banned_asn(bot: fido, nickname, hostmask):
@@ -25,20 +28,19 @@ async def check_ban(bot: fido, nickname, hostmask):
     :param hostmask: Hostmask (Or rather just IP) of user
     :return: Nothing.
     """
-    sessionmanager = SessionManager()
-    session = sessionmanager.session
     try:
         ip = ipaddress.ip_address(hostmask)
     except ValueError:
         try:
             ip = ipaddress.ip_address(socket.gethostbyname(hostmask))
         except socket.gaierror:
-            print(f"Unable to make sense of hostmask: {hostmask}")
+            log.warning(f"Unable to make sense of hostmask: {hostmask}")
     if ip.version == 6:
         network = ipaddress.ip_network(f"{hostmask}/56", False)
     else:
         network = ipaddress.ip_network(f"{hostmask}/24", False)
-    prefixes = session.query(ASNBlacklist).all()
+    with session_scope() as session:
+        prefixes = session.query(ASNBlacklist).all()
 
     for item in prefixes:
         n2 = ipaddress.ip_network(f"{item.prefix}/{item.cidr}")
