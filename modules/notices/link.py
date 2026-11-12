@@ -2,17 +2,17 @@ import re
 import fido
 
 regex_unreliable = re.compile(
-    r'.*link\.LINK_UNRELIABLE \[warn\] Warning, no response from (?P<server>[A-Za-z0-9.\-]+) for (?P<seconds>\d+) seconds',
+    r'.* Warning, no response from (?P<server>[A-Za-z0-9.\-]+) for (?P<seconds>\d+) seconds',
     re.I
 )
 
 regex_disconnected = re.compile(
-    r'.*link\.LINK_DISCONNECTED \[error\] Lost server link to (?P<server>[A-Za-z0-9.\-]+) \[(?P<ip>[0-9a-fA-F:]+)\]: (?P<reason>.+)',
+    r'.* Lost server link to (?P<server>[A-Za-z0-9.\-]+) \[(?P<ip>[0-9a-fA-F:]+)\]: (?P<reason>.+)',
     re.I
 )
 
 regex_linked = re.compile(
-    r'.*link\.SERVER_LINKED \[info\] Server linked: (?P<from>[A-Za-z0-9.\-]+) -> (?P<to>[A-Za-z0-9.\-]+) \[secure: (?P<tls>[^\]]+)\]',
+    r'.* Server linked: (?P<from>[A-Za-z0-9.\-]+) -> (?P<to>[A-Za-z0-9.\-]+) \[secure: (?P<tls>[^\]]+)\]',
     re.I
 )
 
