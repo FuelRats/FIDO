@@ -4,8 +4,35 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     groups:
+      pip:
+        applies-to: version-updates
+        patterns: ["*"]
       security:
         applies-to: security-updates
+        patterns: ["*"]
+
+  # The python:3.12-slim digest in the Dockerfile; CI tests in the same image. FIDO stays on 3.12.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      docker:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        applies-to: version-updates
         patterns: ["*"]

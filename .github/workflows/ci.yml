@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [python]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The unit suite in the Dockerfile's own base image, so Dependabot's digest updates cover both.
+      - name: Unit tests in python:3.12-slim
+        run: |
+          base=$(sed -n 's/^FROM //p' Dockerfile | head -n 1)
+          docker run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD":/src -w /src "$base" sh -c 'pip install -q -r requirements.txt && pip check && python -W error::DeprecationWarning -c "import fido" && python -m unittest discover -s tests -v'
+
+      # The build fails if the installed packages drift from requirements.txt.
+      - name: Image build
+        run: docker build -t fr-fido:ci .
