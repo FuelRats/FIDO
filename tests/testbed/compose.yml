@@ -1,0 +1,85 @@
+# Test bed, used only by tests/testbed/run.sh, on top of deploy/compose.yml:
+#   docker compose -p fido-testbed --project-directory <temp dir> \
+#     -f deploy/compose.yml -f tests/testbed/compose.yml ...
+# The temp dir holds .env, fido.env and data/, as /home/fuelrats/fido-bot does in prod.
+# TESTBED_DIR (this directory) and the TESTBED_ secrets come from run.sh's environment.
+
+x-ircd: &ircd
+  image: fido-testbed/unrealircd:6.2.6
+  user: "1100:1100"
+  entrypoint: ["sh", "/testbed/ircd-entrypoint.sh"]
+  environment:
+    TESTBED_FIDO_OPER_PASSWORD: ${TESTBED_FIDO_OPER_PASSWORD:?}
+    TESTBED_TESTOP_PASSWORD: ${TESTBED_TESTOP_PASSWORD:?}
+    TESTBED_LINK_PASSWORD: ${TESTBED_LINK_PASSWORD:?}
+    TESTBED_CLOAK_KEY_1: ${TESTBED_CLOAK_KEY_1:?}
+    TESTBED_CLOAK_KEY_2: ${TESTBED_CLOAK_KEY_2:?}
+    TESTBED_CLOAK_KEY_3: ${TESTBED_CLOAK_KEY_3:?}
+  volumes:
+    - ${TESTBED_DIR:?}:/testbed:ro
+    - certs:/certs:ro
+  depends_on:
+    certs:
+      condition: service_completed_successfully
+
+services:
+  certs:
+    image: fido-testbed/unrealircd:6.2.6
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["sh", "/testbed/gen-certs.sh"]
+    volumes:
+      - ${TESTBED_DIR:?}:/testbed:ro
+      - certs:/certs
+
+  hub:
+    <<: *ircd
+    command: ["hub"]
+    hostname: hub.irc.example.test
+    networks:
+      irc:
+        aliases: [hub.irc.example.test]
+
+  leaf:
+    <<: *ircd
+    command: ["leaf"]
+    hostname: leaf.irc.example.test
+    networks:
+      irc:
+        aliases: [leaf.irc.example.test]
+
+  # FIDO as deploy/compose.yml runs it, on the test bed's network instead of the host's.
+  fr-fido:
+    container_name: fr-fido-testbed
+    network_mode: !reset null
+    networks: [irc]
+    environment:
+      SSL_CERT_FILE: /certs/ca.pem
+    volumes:
+      - certs:/certs:ro
+    depends_on:
+      hub:
+        condition: service_started
+
+  client:
+    image: fr-fido:${FIDO_TAG:?}
+    profiles: [tools]
+    entrypoint: ["python", "-I", "/testbed/ircclient.py"]
+    environment:
+      TESTBED_TESTOP_PASSWORD: ${TESTBED_TESTOP_PASSWORD:?}
+      SSL_CERT_FILE: /certs/ca.pem
+    volumes:
+      - ${TESTBED_DIR:?}:/testbed:ro
+      - certs:/certs:ro
+    networks: [irc]
+
+networks:
+  # No route out: nothing in the test bed can reach a real network.
+  irc:
+    internal: true
+    ipam:
+      config:
+        - subnet: 198.51.100.0/24
+
+volumes:
+  certs:
