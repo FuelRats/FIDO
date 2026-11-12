@@ -52,9 +52,9 @@ class DBTestCase(unittest.IsolatedAsyncioTestCase):
             return [row.value for row in session.query(config.Config).filter_by(module=module, key=key)]
 
     def operator_bot(self, channel=CHANNEL) -> harness.FakeBot:
-        """A FakeBot in channel, with Jameson holding op there so permission checks pass."""
+        """A FakeBot in channel, with Jameson an IRC operator holding op there, so permission checks pass."""
         bot = harness.FakeBot()
-        bot.add_user(JAMESON, channel=channel, status='o')
+        bot.add_user(JAMESON, channel=channel, status='o', oper=True)
         return bot
 
 
@@ -115,7 +115,7 @@ class SessionTrackerTest(DBTestCase):
         self.assertEqual(lasttime, earlier)
         self.assertEqual(self.db.count('ircsessions'), 2)
 
-    def test_new_pair_purges_sessions_past_retention(self):
+    def test_first_session_purges_sessions_past_retention(self):
         expired = now() - datetime.timedelta(days=sessiontracker.SessionHandler.retention_time + 1)
         self.add(ircsessions.IRCSessions(timestamp=expired, nickname=THIRD_NICK, hostmask=OTHER_HOST,
                                          network='192.0.2.0/24'))
@@ -141,14 +141,12 @@ class ASNTest(DBTestCase):
                  asn_blacklist.ASNBlacklist(timestamp=now(), asn=ASN, prefix='2001:db8::', cidr='48',
                                             reason='test', asn_name=ASN_NAME))
 
-    async def test_check_ban_matches_v4_and_v6_prefixes(self):
-        banned, item = await asn_protection.check_ban(None, JAMESON, '192.0.2.77')
-        self.assertTrue(banned)
-        self.assertEqual((item.asn, item.asn_name, item.cidr), (ASN, ASN_NAME, '24'))
-        banned, item = await asn_protection.check_ban(None, JAMESON, '2001:db8:0:5::1')
-        self.assertTrue(banned)
-        self.assertEqual(item.cidr, '48')
-        self.assertEqual(await asn_protection.check_ban(None, JAMESON, UNBANNED_HOST), (False, None))
+    def test_check_ban_matches_v4_and_v6_prefixes(self):
+        item = asn_protection.check_ban('192.0.2.77')
+        self.assertEqual((item.asn, item.asn_name, str(item.network)), (ASN, ASN_NAME, '192.0.2.0/24'))
+        item = asn_protection.check_ban('2001:db8:0:5::1')
+        self.assertEqual(str(item.network), '2001:db8::/48')
+        self.assertIsNone(asn_protection.check_ban(UNBANNED_HOST))
 
     async def test_protect_banned_asn_reports_and_glines(self):
         bot = harness.FakeBot()
@@ -158,21 +156,27 @@ class ASNTest(DBTestCase):
         self.assertTrue(bot.lines[1].startswith('GLINE *@192.0.2.77 7d You are connecting from a banned VPN network'))
 
     async def test_asn_ban_stores_prefixes_with_a_timeout(self):
-        reply = mock.Mock()
-        reply.json.return_value = {
-            'status': 'ok',
-            'data': {'ipv4_prefixes': [{'ip': '192.0.2.128', 'cidr': 25, 'name': 'DOC-NET'}],
-                     'ipv6_prefixes': [{'ip': '2001:db8:100::', 'cidr': 48, 'name': 'DOC-NET'}]},
+        def reply(body):
+            response = mock.Mock()
+            response.json.return_value = body
+            return response
+
+        bodies = {
+            asn_ban.ANNOUNCED_PREFIXES_URL: {'status': 'ok', 'data': {'prefixes': [
+                {'prefix': '192.0.2.128/25'}, {'prefix': '2001:db8:100::/48'}]}},
+            asn_ban.AS_OVERVIEW_URL: {'status': 'ok', 'data': {'holder': 'DOC-NET'}},
         }
         bot = self.operator_bot()
-        with mock.patch.object(asn_ban.requests, 'get', return_value=reply) as get:
+        with mock.patch.object(asn_ban.requests, 'get', side_effect=lambda url, **_: reply(bodies[url])) as get:
             await asn_ban.ban_asn(bot, CHANNEL, JAMESON, ['AS64511', ASN])
-        get.assert_called_once()
-        self.assertEqual(get.call_args.kwargs['timeout'], asn_ban.HTTP_TIMEOUT)
+        self.assertEqual(get.call_count, 2)  # AS64496 is already banned and not fetched
+        self.assertTrue(all(call.kwargs['timeout'] == asn_ban.HTTP_TIMEOUT for call in get.call_args_list))
         with session_scope() as session:
             stored = session.query(asn_blacklist.ASNBlacklist).filter_by(asn='AS64511').count()
         self.assertEqual(stored, 2)
-        self.assertEqual(bot.messages(CHANNEL)[-1][1], 'ASN Ban: Blocked 1 IPv4 prefixes, 1 IPv6 prefixes.')
+        self.assertEqual([text for _, text in bot.messages(CHANNEL)],
+                         ['ASN Ban: Blocked 2 prefixes of AS64511 (DOC-NET): 1 IPv4, 1 IPv6.',
+                          f'ASN Ban: {ASN} is already banned.'])
 
     async def test_asn_unban_deletes_every_prefix(self):
         bot = self.operator_bot()
@@ -230,10 +234,10 @@ class ProtectionsTest(DBTestCase):
 class CommandsTest(DBTestCase):
     async def test_join_and_part_persist_the_channel_list(self):
         bot = self.operator_bot()
+        bot.echo_joins = True
         await channels.join_channel(bot, CHANNEL, JAMESON, ['#absdev'])
         self.assertIn('JOIN #absdev', bot.lines)
         self.assertEqual(self.config_rows('channels', 'join'), ['#absdev'])
-        bot.add_channel('#absdev')
         await channels.part_channel(bot, CHANNEL, JAMESON, ['#absdev'])
         self.assertIn('PART #absdev', bot.lines)
         self.assertEqual(self.config_rows('channels', 'join'), [])
@@ -260,16 +264,18 @@ class CommandsTest(DBTestCase):
         bot = self.operator_bot()
         bot.add_user(OTHER_NICK, hostname=OTHER_HOST, channel=CHANNEL)
         await mute.invoke(bot, CHANNEL, JAMESON, [OTHER_NICK])
-        self.assertIn(f'MODE {CHANNEL} +b ~t:4:~quiet:*!*@{OTHER_HOST}', bot.lines)
+        mask = f'~time:4:~quiet:*!*@{OTHER_HOST}'
+        self.assertIn(f'MODE {CHANNEL} +b {mask}', bot.lines)
+        await bot.receive(f':{harness.BOT_NICK}!fido@{harness.SERVER_NAME} MODE {CHANNEL} +b {mask}')
         await unmute.invoke(bot, CHANNEL, JAMESON, [OTHER_NICK])
-        self.assertTrue(any(line.startswith(f'MODE {CHANNEL} -b ') for line in bot.lines))
+        self.assertEqual(bot.lines[-2], f'MODE {CHANNEL} -b {mask}')
         self.assertEqual(bot.messages(CHANNEL)[-1][1], f'Unmuted {OTHER_NICK}.')
 
     async def test_lockdown_sets_and_clears_its_row(self):
         bot = self.operator_bot()
         await lockdown.lockdown(bot, CHANNEL, JAMESON, [])
         self.assertEqual(self.config_rows('droneprotection', 'lockdown'), ['True'])
-        self.assertIn('MODE #ratchat +b ~f:#NewRats:~G:unknown-users', bot.lines)
+        self.assertIn('MODE #ratchat +b ~forward:#NewRats:~security-group:unknown-users', bot.lines)
         await lockdown.disable_lockdown(bot, CHANNEL, JAMESON, [])
         self.assertEqual(self.config_rows('droneprotection', 'lockdown'), [])
 

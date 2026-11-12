@@ -2,7 +2,7 @@ import fido
 from config import IRC
 from modules import configmanager
 from modules.commands import fetch, channels, puppet, mute, unmute, monitor, \
-    unmonitor, asn_ban, rcjoin, lockdown
+    unmonitor, asn_ban, rcjoin, lockdown, smssend
 
 commandsDict = {
     "fetch": fetch.invoke,
@@ -20,6 +20,7 @@ commandsDict = {
     "rcjoin": rcjoin.rcjoin,
     "lockdown": lockdown.lockdown,
     "unlock": lockdown.disable_lockdown,
+    "smssend": smssend.invoke,
 }
 
 privateCommandsDict = {
@@ -39,7 +40,8 @@ async def on_channel_message(bot: fido, channel: str, sender: str, message: str)
     """
     if message.startswith(IRC.commandPrefix):
         bot_hosts = configmanager.get_config("commandhandler", "bothost")
-        if bot.users[sender]["hostname"] in bot_hosts:
+        user = bot.users.get(sender)
+        if user is not None and user.get("hostname") in bot_hosts:
             # Ignore commands sent by other bots
             return
         parts = message[1:].split(" ")

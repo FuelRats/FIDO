@@ -19,6 +19,7 @@ DEFAULTS = {
     ('channelprotection', 'reason'): DEFAULT_KICK_REASON,
     ('channels', 'operchannel'): '#opers',
     ('channels', 'puppet_permission'): '#ratchat',
+    ('channels', 'ratops'): '#rat-ops',
 }
 
 FLAG_ON = 'on'
@@ -28,6 +29,9 @@ FLAG_OFF = 'off'
 GATE_OPERS_REPORTS = ('notices', 'opers_reports')
 GATE_SMS = ('notices', 'sms')
 GATE_RATCHAT_LINK_WARNINGS = ('notices', 'ratchat_link_warnings')
+GATE_NEWRATS_GREETING = ('newrats', 'greeting')
+GATE_AUTO_LOCKDOWN = ('channelprotection', 'auto_lockdown')
+GATES = (GATE_OPERS_REPORTS, GATE_SMS, GATE_RATCHAT_LINK_WARNINGS, GATE_NEWRATS_GREETING, GATE_AUTO_LOCKDOWN)
 GATE_DEFAULT = True
 
 

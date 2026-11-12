@@ -17,6 +17,8 @@ from sqlalchemy import create_engine
 
 import fido
 import models
+from modules import sessiontracker
+from modules.networkprotection import asn_blacklist
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 PROD_SCHEMA = FIXTURES / 'prod_schema.sql'
@@ -45,6 +47,12 @@ def schema_statements(path=PROD_SCHEMA) -> list:
     if buffer.strip():
         raise ValueError(f"{path} ends with an incomplete statement")
     return statements
+
+
+def reset_db_state():
+    """Forget what modules keep in memory from the DB, so nothing carries over from one temp DB to the next."""
+    asn_blacklist.forget_prefixes()
+    sessiontracker.reset_purge_clock()
 
 
 def build_db(path, schema=PROD_SCHEMA):
@@ -81,10 +89,12 @@ class TempDB:
         self.engine = create_engine(self.url)
         self._previous_engine = models.engine
         models.use_engine(self.engine)
+        reset_db_state()
         return self
 
     def __exit__(self, *exc):
         models.use_engine(self._previous_engine)
+        reset_db_state()
         self.engine.dispose()
         self._dir.cleanup()
         return False
@@ -122,6 +132,8 @@ class FakeBot(fido.FIDO):
     A real FIDO, registered on irc.example.test without a socket. pydle formats every command as
     usual, so `lines` holds the exact wire lines (PRIVMSG, MODE, KICK, GLINE, MONITOR ...).
     WHOIS is answered from `whois_replies` (a missing nick gives None, as for 401).
+    `receive(line)` runs a server line through pydle's parser and handlers. With `echo_joins` on,
+    every JOIN FIDO sends is answered with the server's echo, as a real server does.
     Constructible without a running event loop.
     """
 
@@ -134,6 +146,7 @@ class FakeBot(fido.FIDO):
         self._isupport.update({'MONITOR': '128', 'WHOX': True})
         self._nickname_prefixes = PREFIXES.copy()
         self.whois_replies = {}
+        self.echo_joins = False
 
     @property
     def lines(self) -> list:
@@ -158,11 +171,18 @@ class FakeBot(fido.FIDO):
         return self.channels[channel]
 
     def add_user(self, nickname=USER_NICK, username='jameson', hostname=USER_HOST, channel=None,
-                 status='', identified=False):
+                 status='', identified=False, oper=False, real_ip=None):
         """
         Put a user into pydle's user table, and into channel with the given status letters
-        ('o', 'hv', ...) if a channel is named.
+        ('o', 'hv', ...) if a channel is named. The user answers WHOIS as pydle reports it, with
+        'oper' from 313 and 'real_ip_address' from 378.
         """
+        self.whois_replies[nickname] = {
+            'oper': oper, 'idle': 0, 'away': False, 'away_message': None,
+            'username': username, 'hostname': hostname, 'realname': nickname,
+            'account': nickname if identified else None, 'identified': identified,
+            'real_ip_address': real_ip, 'real_hostname': hostname if real_ip else None,
+        }
         self.users[nickname] = {
             'nickname': nickname,
             'username': username,
@@ -182,6 +202,17 @@ class FakeBot(fido.FIDO):
 
     async def whois(self, nickname):
         return self.whois_replies.get(nickname)
+
+    async def receive(self, line: str):
+        """Handle one line from the server, as read from the socket, and wait for its handlers."""
+        self._receive_buffer += (line + '\r\n').encode(self.encoding)
+        while self._has_message():
+            await self.on_raw(self._parse_message())
+
+    async def join(self, channel, password=None):
+        await super().join(channel, password)
+        if self.echo_joins:
+            await self.receive(f":{self.nickname}!fido@{SERVER_NAME} JOIN :{channel}")
 
 
 class CaptureHandler(logging.Handler):

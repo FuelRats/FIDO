@@ -55,7 +55,6 @@ class IRC:
 
 
 class Logging:
-    filename = 'FIDO.log'  # not read; logs go to stdout
     level = env_str('FIDO_LOG_LEVEL', 'INFO').strip().upper()
 
 

@@ -11,7 +11,7 @@ from config import IRC, Logging
 from models import monitor, session_scope
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
-from modules import configmanager
+from modules import access, configmanager
 from modules.newrats import induction
 
 log = logging.getLogger(__name__)
@@ -24,13 +24,6 @@ OPER_FAIL_BACKOFF = 300  # seconds between a 464/491 and the exit; read at use t
 SHUTDOWN_GRACE = 3  # seconds to wait for the server to close the link after QUIT
 WATCHDOG_INTERVAL = 5  # longest pause between two silence checks, in seconds
 QUIT_MESSAGE = 'restarting'
-
-#baseClient = pydle.featurize(pydle.features.CTCPSupport, pydle.features.AccountSupport,
-#                             pydle.features.IRCv3Support, pydle.features.WHOXSupport, pydle.features.ISUPPORTSupport,
-#                             pydle.features.TLSSupport, pydle.features.ircv3.CapabilityNegotiationSupport,
-#                             pydle.features.ircv3.SASLSupport, pydle.features.ircv3.MonitoringSupport,
-#                             pydle.features.ircv3.TaggedMessageSupport, pydle.features.ircv3.MetadataSupport,
-#                             pydle.features.rfc1459.RFC1459Support)
 
 
 class ServerNameConnection(pydle.connection.Connection):
@@ -63,7 +56,10 @@ class FIDO(pydle.Client):
     operchannel: str = None
 
     def __init__(self, *args, **kwargs):
-        self.recent_greeting = []
+        self.recent_greeting = {}  # normalized nick -> time.monotonic() of the #NewRats greeting
+        self.oper_cache = {}  # normalized nick -> (expiry, is IRC operator); see modules.access
+        self.oper_cache_generation = 0  # bumped by every nick change or quit
+        self._join_waiters = {}  # normalized channel -> future resolved by FIDO's own JOIN echo
         self.opered = False
         self.snomask = None
         self.shutdown_requested = False
@@ -276,13 +272,51 @@ class FIDO(pydle.Client):
 
     async def on_join(self, channel, user):
         await super().on_join(channel, user)
-        if user == self.nickname:
+        if self.is_same_nick(user, self.nickname):
+            waiter = self._join_waiters.get(self.normalize(channel))
+            if waiter is not None and not waiter.done():
+                waiter.set_result(True)
+            # The ban list (367 lines) lets !unmute find the exact mute masks.
+            await self.rawmsg('MODE', channel, 'b')
             return
         await induction.on_join(self, channel, user)
         # TODO: Maybe session cache here instead?
 
-    async def on_raw(self, message):
-        await super().on_raw(message)
+    async def join_confirmed(self, channel: str, timeout: float) -> bool:
+        """Send JOIN and wait up to timeout seconds for the server's echo of FIDO's own JOIN."""
+        key = self.normalize(channel)
+        waiter = asyncio.get_running_loop().create_future()
+        self._join_waiters[key] = waiter
+        try:
+            await self.join(channel)
+            await asyncio.wait_for(waiter, timeout)
+            return True
+        except TimeoutError:
+            return False
+        finally:
+            if self._join_waiters.get(key) is waiter:
+                del self._join_waiters[key]
+
+    async def on_raw_367(self, message):
+        """RPL_BANLIST: one ban list entry, kept in the list pydle updates from +b/-b changes."""
+        channel, mask = message.params[1], message.params[2]
+        if not self.in_channel(channel):
+            return
+        bans = self.channels[channel]['modes'].setdefault('b', [])
+        if mask not in bans:
+            bans.append(mask)
+
+    async def on_raw_368(self, message):
+        """RPL_ENDOFBANLIST: the 367 lines before it already filled the list."""
+
+    async def on_nick_change(self, old, new):
+        await super().on_nick_change(old, new)
+        access.forget_oper(self, old)
+        access.forget_oper(self, new)
+
+    async def on_quit(self, user, message=None):
+        await super().on_quit(user, message)
+        access.forget_oper(self, user)
 
     async def on_channel_message(self, target, nick, message):
         await super().on_channel_message(target, nick, message)
@@ -291,14 +325,11 @@ class FIDO(pydle.Client):
         await channelprotectionhandler.handle_message(self, target, nick, message)
         await commandHandler.on_channel_message(self, target, nick, message)
 
-    async def on_channel_notice(self, target, nick, message):
-        await super().on_channel_notice(target, nick, message)
-
     async def on_ctcp(self, by, target, what, contents):
         await super().on_ctcp(by, target, what, contents)
         if by == self.nickname:
             return
-        if what == 'ACTION':
+        if what == 'ACTION' and self.is_channel(target):
             await channelprotectionhandler.handle_message(self, target, by, contents)
 
     async def on_private_message(self, target, nick, message):
@@ -318,12 +349,12 @@ class FIDO(pydle.Client):
     async def on_user_online(self, nickname):
         await super().on_user_online(nickname)
         log.debug(f"Monitored user {nickname} is online.")
-        await self.message("#rat-ops", f"Monitored user {nickname} is online!")
+        await self.message(self.get_ratops_channel(), f"Monitored user {nickname} is online!")
 
     async def on_user_offline(self, nickname):
         await super().on_user_offline(nickname)
         log.debug(f"Monitored user {nickname} is now offline.")
-        await self.message("#rat-ops", f"Monitored user {nickname} is now offline.")
+        await self.message(self.get_ratops_channel(), f"Monitored user {nickname} is now offline.")
 
     @staticmethod
     def colour_red(message: str):
@@ -341,6 +372,10 @@ class FIDO(pydle.Client):
         if self.operchannel is None:
             self.operchannel = configmanager.get_value('channels', 'operchannel')
         return self.operchannel
+
+    @staticmethod
+    def get_ratops_channel():
+        return configmanager.get_value('channels', 'ratops')
 
 
 def config_problems() -> list:

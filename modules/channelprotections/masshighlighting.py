@@ -5,7 +5,8 @@ from modules import configmanager
 
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
-    kick_reason: str = configmanager.get_value('channelprotection', 'reason')
+    kick_reason: str = (configmanager.get_value('channelprotection', 'reason_highlight')
+                        or configmanager.get_value('channelprotection', 'reason'))
     max_highlight_count: int = int(configmanager.get_value('channelprotection', 'maxhighlightcount'))
 
     highlighted_users: List[str] = []

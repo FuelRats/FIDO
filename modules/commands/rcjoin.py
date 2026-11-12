@@ -3,13 +3,13 @@ from config import IRC
 
 import fido
 
-from modules.access import require_permission, Levels
+from modules.access import require_oper
 import logging
 
 log = logging.getLogger(__name__)
 
 
-@require_permission(level=Levels.VOICE, message='You must be a drilled rat to !rcjoin clients.')
+@require_oper("!rcjoin clients")
 async def rcjoin(bot: fido, channel: str, sender: str, args: List[str]):
     if len(args) == 0:
         return "Usage: " + IRC.commandPrefix + "rcjoin <client name>"
