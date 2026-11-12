@@ -1,50 +1,30 @@
-import re
 import fido
+from modules import configmanager
 
-regex = re.compile('.* G-Line added for (?P<user>[A-Za-z0-9_´|\*\[\]].*)@(?P<host>[A-Za-z0-9.:_\-].*) on '
-                   '(?P<timestamp>.*) \(from (?P<sender>[A-Za-z0-9_´|\[\]].*) to expire at (?P<expiration>.*): '
-                   '(?P<reason>.*)\)', re.I)
-
-perma = re.compile('.* G-Line added for (?P<user>[A-Za-z0-9_´|\*\[\]].*)@(?P<host>[A-Za-z0-9.:_\-].*) on '
-                   '(?P<timestamp>.*) \(from (?P<sender>[A-Za-z0-9_´|\[\]].*): '
-                   '(?P<reason>.*)\)', re.I)
+GLINE_TYPE = 'G-Line'
+PERMANENT = 'permanent'
 
 
-async def on_gline(bot: fido, message: str, match):
+async def on_tkl_add(bot: fido, message: str, match):
     """
-    Handler for the gline notice
+    Handler for tkl.TKL_ADD: report G-Lines (and Soft G-Lines) to the oper channel. G-Lines FIDO set
+    itself are skipped; protect_banned_asn already reported them as ASN BAN.
     :param bot: bot instance
-    :param message: message
-    :param match: regex match
-    :return: The reply message
+    :param message: notice text after the frame
+    :param match: match of patterns.PATTERNS['tkl.TKL_ADD']
     """
-    operchannel = bot.get_oper_channel()
-    user = match.group('user')
-    host = match.group('host')
-    sender = match.group('sender')
+    if GLINE_TYPE not in (match.group('type') or ''):
+        return
+    by = match.group('by')
+    if bot.is_same_nick(by.partition('!')[0], bot.nickname):
+        return
+    if not configmanager.gate_open(configmanager.GATE_OPERS_REPORTS):
+        return
+    mask = match.group('mask')
     reason = match.group('reason')
-    expiration = match.group('expiration')
-    await bot.message(operchannel,
-                      f"{bot.colour_red('GLINE')} {user}@{host} was G-LINED by {sender} until {expiration} "
-                      f"with message: {reason}")
-
-
-async def on_perma(bot: fido, message: str, match):
-    """
-    Handler for the permanent gline notice
-    :param bot: bot instance
-    :param message: message
-    :param match: regex match
-    :return: The reply message
-    """
-    operchannel = bot.get_oper_channel()
-    user = match.group('user')
-    host = match.group('host')
-    sender = match.group('sender')
-    reason = match.group('reason')
-    if 'to expire at' in sender:
-        return  # Don't trigger if the regmatch is a false positive from a timed gline.
-    await bot.message(operchannel,
-                      f"{bot.colour_red('GLINE')} {user}@{host} was PERMANENTLY G-LINED by {sender} "
-                      f"with message: {reason}")
-
+    duration = match.group('duration')
+    if duration == PERMANENT:
+        text = f"{bot.colour_red('GLINE')} {mask} was PERMANENTLY G-LINED by {by} with message: {reason}"
+    else:
+        text = f"{bot.colour_red('GLINE')} {mask} was G-LINED by {by} for {duration} with message: {reason}"
+    await bot.message(bot.get_oper_channel(), text)

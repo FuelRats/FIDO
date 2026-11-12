@@ -1,5 +1,4 @@
 import logging
-import socket
 
 from sqlalchemy import or_
 
@@ -30,10 +29,8 @@ def _is_clone(session, nickname, hostmask, withdate):
     try:
         ip = ipaddress.ip_address(hostmask)
     except ValueError:
-        try:
-            ip = ipaddress.ip_address(socket.gethostbyname(hostmask))
-        except socket.gaierror:
-            log.warning(f"Unable to make sense of hostmask: {hostmask}")
+        log.warning("Client connected without an IP address, session not tracked")
+        return (None, None) if withdate else None
     log.debug(f"IP version: {ip.version}")
     if ip.version == 6:
         network = ipaddress.ip_network(f"{hostmask}/56", False)

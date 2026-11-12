@@ -305,9 +305,14 @@ class FIDO(pydle.Client):
         await super().on_private_message(target, nick, message)
         await commandHandler.on_private_message(self, nick, message)
 
-    async def on_notice(self, target, nick, message):
-        await super().on_notice(target, nick, message)
-        log.debug(f"target: {target}, nick: {nick}, message: {message}")
+    async def on_notice(self, target, by, message):
+        """
+        Only server notices addressed to FIDO reach the notice handlers. pydle passes the bare server
+        name as `by` for a server prefix and the bare nick for a user; nicks cannot contain a dot.
+        """
+        await super().on_notice(target, by, message)
+        if not (by and '.' in by and self.is_same_nick(target, self.nickname)):
+            return
         await noticehandler.handle_notice(self, message)
 
     async def on_user_online(self, nickname):
@@ -323,6 +328,14 @@ class FIDO(pydle.Client):
     @staticmethod
     def colour_red(message: str):
         return f"\u000304{message}\u000f"
+
+    @staticmethod
+    def colour_yellow(message: str):
+        return f"\u000308{message}\u000f"
+
+    @staticmethod
+    def colour_green(message: str):
+        return f"\u000303{message}\u000f"
 
     def get_oper_channel(self):
         if self.operchannel is None:

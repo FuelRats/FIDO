@@ -1,5 +1,4 @@
 import logging
-import socket
 import fido
 import ipaddress
 from models import session_scope
@@ -31,10 +30,8 @@ async def check_ban(bot: fido, nickname, hostmask):
     try:
         ip = ipaddress.ip_address(hostmask)
     except ValueError:
-        try:
-            ip = ipaddress.ip_address(socket.gethostbyname(hostmask))
-        except socket.gaierror:
-            log.warning(f"Unable to make sense of hostmask: {hostmask}")
+        log.warning("Client connected without an IP address, ASN check skipped")
+        return False, None
     if ip.version == 6:
         network = ipaddress.ip_network(f"{hostmask}/56", False)
     else:

@@ -24,6 +24,12 @@ DEFAULTS = {
 FLAG_ON = 'on'
 FLAG_OFF = 'off'
 
+# Runtime gates as (module, key), read with get_flag on every use; a missing row means on.
+GATE_OPERS_REPORTS = ('notices', 'opers_reports')
+GATE_SMS = ('notices', 'sms')
+GATE_RATCHAT_LINK_WARNINGS = ('notices', 'ratchat_link_warnings')
+GATE_DEFAULT = True
+
 
 def get_config(module, key):
     """
@@ -64,6 +70,12 @@ def get_flag(module, key, default: bool) -> bool:
         return False
     log.warning(f"Config {module}/{key} is neither '{FLAG_ON}' nor '{FLAG_OFF}', using the default")
     return default
+
+
+def gate_open(gate) -> bool:
+    """Whether a runtime gate (one of the GATE_ pairs) is on."""
+    module, key = gate
+    return get_flag(module, key, GATE_DEFAULT)
 
 
 def set_config(module, key, value):

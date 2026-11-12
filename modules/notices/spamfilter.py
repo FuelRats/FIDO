@@ -1,24 +1,42 @@
-import re
 import fido
+from modules import configmanager, sms
 
-regex = re.compile("\[Spamfilter\] (?P<nick>[A-Za-z0-9_´|\[\]]*)!(?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*) matches filter \'(?P<filter>.*)\': \[cmd: PRIVMSG (?P<target>[A-Za-z0-9#_`\[\]]*): '.*'\] \[reason: (?P<message>[A-Za-z0-9]* .*)]")
+# Filters whose name holds one of these words are the ops alert filters (any case).
+OPS_SIGNAL_WORDS = ('opsignal', 'opssignal')
+OPS_GROUP = 'ops'
+NO_ACTION = 'action not shown'
 
 
-async def on_spamfilter_trigger(bot: fido, message, match):
+def is_ops_signal(filter_text: str) -> bool:
+    lowered = filter_text.lower()
+    return any(word in lowered for word in OPS_SIGNAL_WORDS)
+
+
+async def on_spamfilter_trigger(bot: fido, message: str, match):
     """
-    Handler for spamfilter triggers
+    Handler for tkl.SPAMFILTER_MATCH. An ops alert filter posts OPS1GNAL to the oper channel and
+    texts the ops group; any other filter posts a SPAMFILTER line. A hit cut off by the line limit
+    matches only the head pattern, which has no reason or action.
     :param bot: bot instance
-    :param message: message caught
-    :param match: The regex match
-    :return: Nothing
+    :param message: notice text after the frame
+    :param match: match of the spamfilter pattern or of its head-only fallback
     """
+    groups = match.groupdict()
+    nick = groups['nick']
+    filter_text = groups['filter']
+    target = groups['target'] or groups['cmd'] or '-'
+    reason = groups.get('reason')
+    reports_on = configmanager.gate_open(configmanager.GATE_OPERS_REPORTS)
 
-    operchannel = bot.get_oper_channel()
-    nick = match.group('nick')
-    host = match.group('host')
-    sender = match.group('user')
-    message = match.group('message')
-    target = match.group('target')
+    if not is_ops_signal(filter_text):
+        if reports_on:
+            action = groups.get('action') or NO_ACTION
+            await bot.message(bot.get_oper_channel(),
+                              f"SPAMFILTER {nick} -> {target} matched '{filter_text}' ({action})")
+        return
 
-    await bot.message(operchannel, f"OPS1GNAL by {nick} in {target}: {message}")
-    return
+    summary = f"by {nick} in {target}: {reason}" if reason else f"by {nick} in {target}"
+    if reports_on:
+        await bot.message(bot.get_oper_channel(), f"OPS1GNAL {summary}")
+    if configmanager.gate_open(configmanager.GATE_SMS):
+        await sms.send_to_group(OPS_GROUP, f"OPSIGNAL {summary}")

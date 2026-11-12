@@ -1,22 +1,18 @@
-import re
 import fido
+from modules import configmanager
 
-regex = re.compile('.* Failed OPER attempt by (?P<nick>[A-Za-z0-9_´|\[\]]*) \((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) \[(?P<reason>[0-9.:A-F-a-f]*)\]')
 
-
-async def on_oper_fail(bot: fido, match):
+async def on_oper_fail(bot: fido, message: str, match):
     """
-    Handler for failed oper notices
+    Handler for oper.OPER_FAILED: report the failed attempt to the oper channel.
     :param bot: bot instance
-    :param message: message
-    :param match: regex match
-    :return: Nothing
+    :param message: notice text after the frame
+    :param match: match of patterns.PATTERNS['oper.OPER_FAILED']
     """
-    operchannel = bot.get_oper_channel()
-    nick = match.group('nick')
-    host = match.group('host')
-    sender = match.group('user')
+    if not configmanager.gate_open(configmanager.GATE_OPERS_REPORTS):
+        return
+    nick, _, userhost = match.group('client').partition('!')
+    host = userhost.rpartition('@')[2]
     reason = match.group('reason')
-    await bot.message(operchannel,
+    await bot.message(bot.get_oper_channel(),
                       f"Failed {bot.colour_red('OPER')} by {nick} ({host}): {reason}")
-    return
