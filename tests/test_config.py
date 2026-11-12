@@ -74,17 +74,19 @@ class EnvParsingTest(unittest.TestCase):
         self.assertEqual((irc.nickname, irc.commandPrefix, irc.operline, irc.operlinePassword, irc.expectSnomask),
                          ('FIDO[BOT]', '!', '', '', ''))
         self.assertEqual((irc.startupDeadline, irc.silenceLimit), (90, 360))
+        self.assertEqual((irc.saslUsername, irc.saslPassword), ('', ''))
         self.assertEqual(namespace['Logging'].level, 'INFO')
         self.assertEqual(namespace['SQLAlchemy'].url, 'sqlite:///FIDO.sqlite')
         self.assertEqual(namespace['SessionHandler'].retention_time, 90)
 
     def test_values_from_the_environment(self):
         password = f'${secrets.token_urlsafe(12)} with # and spaces '
+        sasl_password = f'{secrets.token_urlsafe(12)} :with a colon'
         namespace = load_config(
             FIDO_IRC_SERVER='irc.example.test', FIDO_IRC_PORT='6667', FIDO_IRC_TLS='off', FIDO_TLS_VERIFY='on',
             FIDO_TLS_SERVERNAME='irc.example.test', FIDO_NICK='FIDO-test', FIDO_OPER_NAME='fido-test',
             FIDO_EXPECT_SNOMASK='+cC',
-            FIDO_OPER_PASSWORD=password,
+            FIDO_OPER_PASSWORD=password, FIDO_SASL_USERNAME='FIDO-test', FIDO_SASL_PASSWORD=sasl_password,
             FIDO_DB_URL='sqlite:////data/FIDO.sqlite', FIDO_LOG_LEVEL='debug', FIDO_SESSION_RETENTION_DAYS='30',
             FIDO_STARTUP_DEADLINE='5', FIDO_SILENCE_LIMIT='60')
         irc = namespace['IRC']
@@ -92,6 +94,7 @@ class EnvParsingTest(unittest.TestCase):
                          ('irc.example.test', 6667, False, True, 'irc.example.test'))
         self.assertEqual((irc.nickname, irc.operline, irc.operlinePassword, irc.expectSnomask),
                          ('FIDO-test', 'fido-test', password, '+cC'))
+        self.assertEqual((irc.saslUsername, irc.saslPassword), ('FIDO-test', sasl_password))
         self.assertEqual((irc.startupDeadline, irc.silenceLimit), (5, 60))
         self.assertEqual(namespace['Logging'].level, 'DEBUG')
         self.assertEqual(namespace['SQLAlchemy'].url, 'sqlite:////data/FIDO.sqlite')
@@ -135,6 +138,21 @@ class MainValidationTest(unittest.TestCase):
     def test_complete_settings_have_no_problems(self):
         with mock.patch.multiple(IRC, operline='fido-test', operlinePassword='set'):
             self.assertEqual(fido.config_problems(), [])
+
+    def test_sasl_settings_come_in_pairs(self):
+        pair_problem = 'FIDO_SASL_USERNAME and FIDO_SASL_PASSWORD must both be set, or both left empty'
+        for username, password, problems in (('FIDO-test', '', [pair_problem]), ('', 'set', [pair_problem]),
+                                             ('FIDO-test', 'set', []), ('', '', [])):
+            with mock.patch.multiple(IRC, operline='fido-test', operlinePassword='set', saslUsername=username,
+                                     saslPassword=password):
+                self.assertEqual(fido.config_problems(), problems, (username, password))
+
+    def test_half_a_sasl_pair_exits_2(self):
+        with mock.patch.multiple(IRC, operline='fido-test', operlinePassword='set', saslUsername='FIDO-test',
+                                 saslPassword=''):
+            self.assertEqual(self.run_main(), fido.EXIT_CONFIG)
+        self.assertIn('Configuration error: FIDO_SASL_USERNAME and FIDO_SASL_PASSWORD must both be set, '
+                      'or both left empty', self.logs.messages())
 
 
 class ConfigTableTest(unittest.TestCase):

@@ -1,17 +1,23 @@
 """
 A scripted IRC server for tests. It serves one client at a time on 127.0.0.1 and an ephemeral
 port, plaintext or TLS, as irc.example.test, and answers just enough of UnrealIRCd's protocol
-for FIDO to register and oper. Synthetic data only.
+for FIDO to register and oper: CAP LS 302 split over two lines (registration waits for CAP END,
+as on UnrealIRCd), CAP REQ, and SASL PLAIN. Synthetic data only.
 
     ircd = FakeIRCd()                 # or FakeIRCd(ssl=server_context)
     ircd.oper_reply = '464'           # behaviour knobs, set before the client connects
+    ircd.cap_ls = CAP_LS_WITH_SASL
+    ircd.sasl_accounts = {'FIDO[BOT]': password}
     port = await ircd.start()
     ...
     await ircd.wait_for_line('OPER ')
+    await ircd.cap_new(SASL_TOKEN)    # services link: CAP NEW sasl
     await ircd.close_client(reset=True)
     await ircd.stop()
 """
 import asyncio
+import base64
+import binascii
 import socket
 import struct
 
@@ -20,6 +26,24 @@ DEFAULT_SNOMASK = '+bcdfkoqsBCOS'
 OPER_OK = 'ok'
 WAIT_TIMEOUT = 5  # seconds
 POLL_INTERVAL = 0.01  # seconds
+
+SASL_MECHANISMS = 'ANONYMOUS,EXTERNAL,PLAIN'
+SASL_TOKEN = f'sasl={SASL_MECHANISMS}'
+SASL_CHUNK = 400  # base64 bytes per AUTHENTICATE line
+# UnrealIRCd 6.2.6 splits its CAP LS 302 reply over two lines; sasl is on the first, and is
+# missing while services are not linked.
+_CAP_LS_FIRST = ('account-notify away-notify cap-notify chghost echo-message extended-join invite-notify '
+                 'message-tags multi-prefix {sasl}server-time setname tls userhost-in-names')
+_CAP_LS_LAST = 'draft/multiline=max-bytes=5250,max-lines=15 unrealircd.org/json-log'
+CAP_LS_WITHOUT_SASL = (_CAP_LS_FIRST.format(sasl=''), _CAP_LS_LAST)
+CAP_LS_WITH_SASL = (_CAP_LS_FIRST.format(sasl=SASL_TOKEN + ' '), _CAP_LS_LAST)
+
+CLIENT = 'client'  # transcript direction: a line the client sent
+SERVER = 'server'  # transcript direction: a line the server sent
+
+
+def capability_name(token: str) -> str:
+    return token.lstrip('-~=').split('=', 1)[0].lower()
 
 
 class FakeIRCd:
@@ -31,14 +55,22 @@ class FakeIRCd:
         self.taken_nicks = set()  # NICK with one of these gets 433
         self.oper_reply = OPER_OK  # OPER_OK (008 then 381), '464', '491', or None for no answer
         self.snomask = DEFAULT_SNOMASK
+        self.cap_ls = CAP_LS_WITHOUT_SASL  # lines of the CAP LS reply; () leaves CAP LS unanswered
+        self.sasl_accounts = {}  # account -> password that SASL PLAIN accepts; anything else gets 904
+        self.sasl_answers = True  # False: AUTHENTICATE PLAIN gets no reply, as when services do not answer
         # Observations
         self.received = []  # every line from the client, line ending stripped
+        self.transcript = []  # (CLIENT or SERVER, line) in the order sent
+        self.sasl_responses = []  # each complete SASL PLAIN response, base64-decoded
         self.connections = 0
         self.nick = None
         self._server = None
         self._writer = None
         self._user_seen = False
         self._registered = False
+        self._cap_open = False
+        self._offered = {}
+        self._sasl_buffer = None
 
     # Control
 
@@ -58,6 +90,7 @@ class FakeIRCd:
 
     async def send(self, line: str):
         """Send one line to the connected client."""
+        self.transcript.append((SERVER, line))
         self._writer.write((line + '\r\n').encode('utf-8'))
         await self._writer.drain()
 
@@ -84,6 +117,24 @@ class FakeIRCd:
                         return line
                 await asyncio.sleep(POLL_INTERVAL)
 
+    async def cap_new(self, caps: str):
+        """Announce capabilities, as UnrealIRCd does for sasl when services link."""
+        for token in caps.split():
+            self._offered[capability_name(token)] = token
+        await self.send(f":{self.server_name} CAP {self.nick or '*'} NEW :{caps}")
+
+    async def cap_del(self, caps: str):
+        """Withdraw capabilities, as UnrealIRCd does for sasl when services quit."""
+        for name in caps.split():
+            self._offered.pop(capability_name(name), None)
+        await self.send(f":{self.server_name} CAP {self.nick or '*'} DEL :{caps}")
+
+    async def force_nick(self, new: str):
+        """Rename the client, as services do with SVSNICK."""
+        old = self.nick
+        self.nick = new
+        await self.send(f":{old}!{old.lower()}@{self.server_name} NICK :{new}")
+
     # Protocol
 
     async def _handle(self, reader, writer):
@@ -92,6 +143,9 @@ class FakeIRCd:
         self.nick = None
         self._user_seen = False
         self._registered = False
+        self._cap_open = False
+        self._offered = {}
+        self._sasl_buffer = None
         try:
             while True:
                 raw = await reader.readline()
@@ -99,6 +153,7 @@ class FakeIRCd:
                     break
                 line = raw.decode('utf-8', 'replace').rstrip('\r\n')
                 self.received.append(line)
+                self.transcript.append((CLIENT, line))
                 await self._respond(line)
         except (ConnectionError, OSError):
             pass
@@ -111,7 +166,11 @@ class FakeIRCd:
     async def _respond(self, line: str):
         command, _, rest = line.partition(' ')
         command = command.upper()
-        if command == 'NICK' and self.register:
+        if command == 'CAP' and self.register:
+            await self._on_cap(rest)
+        elif command == 'AUTHENTICATE' and self.register:
+            await self._on_authenticate(rest.lstrip(':'))
+        elif command == 'NICK' and self.register:
             await self._on_nick(rest.split(' ')[0].lstrip(':'))
         elif command == 'USER' and self.register:
             self._user_seen = True
@@ -128,6 +187,62 @@ class FakeIRCd:
             await self.send(f"ERROR :Closing Link: {self.nick}[127.0.0.1] (Quit: {rest.lstrip(':')})")
             self._writer.close()
 
+    async def _on_cap(self, rest: str):
+        subcommand, _, args = rest.partition(' ')
+        subcommand = subcommand.upper()
+        target = self.nick or '*'
+        if subcommand == 'LS' and self.cap_ls:
+            if not self._registered:
+                self._cap_open = True
+            self._offered = {capability_name(token): token for line in self.cap_ls for token in line.split()}
+            for line in self.cap_ls[:-1]:
+                await self.send(f":{self.server_name} CAP {target} LS * :{line}")
+            await self.send(f":{self.server_name} CAP {target} LS :{self.cap_ls[-1]}")
+        elif subcommand == 'REQ':
+            wanted = args.lstrip(':').split()
+            verb = 'ACK' if all(capability_name(token) in self._offered for token in wanted) else 'NAK'
+            await self.send(f":{self.server_name} CAP {target} {verb} :{' '.join(wanted)}")
+        elif subcommand == 'END':
+            self._cap_open = False
+            await self._maybe_register()
+
+    async def _on_authenticate(self, data: str):
+        if data == '*':
+            self._sasl_buffer = None
+            await self._numeric('906', ':SASL authentication aborted')
+            return
+        if self._sasl_buffer is None:
+            if not self.sasl_answers:
+                return
+            if data.upper() != 'PLAIN':
+                await self._numeric('904', ':SASL authentication failed')
+                return
+            self._sasl_buffer = ''
+            await self.send('AUTHENTICATE +')
+            return
+        if data != '+':
+            self._sasl_buffer += data
+        if data == '+' or len(data) < SASL_CHUNK:
+            encoded, self._sasl_buffer = self._sasl_buffer, None
+            await self._check_plain(encoded)
+
+    async def _check_plain(self, encoded: str):
+        try:
+            response = base64.b64decode(encoded, validate=True)
+        except binascii.Error:
+            response = b''
+        self.sasl_responses.append(response)
+        parts = response.split(b'\0')
+        if len(parts) == 3:
+            authzid, authcid, password = (part.decode('utf-8', 'replace') for part in parts)
+            if authzid in ('', authcid) and self.sasl_accounts.get(authcid) == password:
+                nick = self.nick or '*'
+                await self._numeric('900', f"{nick}!{nick.lower()}@{self.server_name} {authcid} "
+                                           f":You are now logged in as {authcid}")
+                await self._numeric('903', ':SASL authentication successful')
+                return
+        await self._numeric('904', ':SASL authentication failed')
+
     async def _on_nick(self, wanted: str):
         if not self._registered and wanted in self.taken_nicks:
             await self.send(f":{self.server_name} 433 {self.nick or '*'} {wanted} :Nickname is already in use.")
@@ -136,7 +251,7 @@ class FakeIRCd:
         await self._maybe_register()
 
     async def _maybe_register(self):
-        if self._registered or not self.nick or not self._user_seen:
+        if self._registered or self._cap_open or not self.nick or not self._user_seen:
             return
         self._registered = True
         server = self.server_name

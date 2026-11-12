@@ -3,8 +3,9 @@ FIDO settings, read from the environment at import.
 
 An unset or empty variable takes the default shown. Booleans accept
 1/true/yes/on and 0/false/no/off (any case); anything else raises ValueError.
-Required values (the oper name and password) are checked by fido.main(), not
-here, so the code imports without secrets.
+Required values (the oper name and password) and the SASL pair (both or
+neither) are checked by fido.main(), not here, so the code imports without
+secrets.
 """
 import os
 
@@ -49,6 +50,8 @@ class IRC:
     commandPrefix = '!'
     operline = env_str('FIDO_OPER_NAME')
     operlinePassword = env_str('FIDO_OPER_PASSWORD')
+    saslUsername = env_str('FIDO_SASL_USERNAME')  # services account; empty with the password: no SASL login
+    saslPassword = env_str('FIDO_SASL_PASSWORD')
     expectSnomask = env_str('FIDO_EXPECT_SNOMASK')  # empty: no check
     startupDeadline = env_int('FIDO_STARTUP_DEADLINE', 90)  # seconds from connect start to 381
     silenceLimit = env_int('FIDO_SILENCE_LIMIT', 360)  # seconds without a received line

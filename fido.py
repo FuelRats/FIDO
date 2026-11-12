@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import signal
 import sys
@@ -20,10 +21,16 @@ EXIT_OK = 0
 EXIT_SESSION_LOST = 1
 EXIT_CONFIG = 2
 
-OPER_FAIL_BACKOFF = 300  # seconds between a 464/491 and the exit; read at use time, tests lower it
+OPER_FAIL_BACKOFF = 300  # seconds between a 464/491 or SASL failure and the exit; read at use time, tests lower it
 SHUTDOWN_GRACE = 3  # seconds to wait for the server to close the link after QUIT
 WATCHDOG_INTERVAL = 5  # longest pause between two silence checks, in seconds
 QUIT_MESSAGE = 'restarting'
+SASL_CAPABILITY = 'sasl'
+SASL_MECHANISM = 'PLAIN'
+SASL_TIMEOUT = 15  # seconds from AUTHENTICATE PLAIN to 903/904/905/906; read at use time, tests lower it
+SASL_CHUNK = 400  # base64 bytes per AUTHENTICATE line (IRCv3 SASL)
+SASL_EMPTY = '+'  # empty challenge, or the end of a response that filled its last line
+SASL_ABORT = '*'
 
 
 class ServerNameConnection(pydle.connection.Connection):
@@ -70,6 +77,8 @@ class FIDO(pydle.Client):
         self._read_loop_done = None
         self._read_task = None
         self._shutdown_task = None
+        self._sasl_deadline = None  # TimerHandle from AUTHENTICATE PLAIN to the final SASL numeric
+        self._sasl_timeout_task = None
         super().__init__(*args, **kwargs)
 
     # Session lifecycle
@@ -91,9 +100,11 @@ class FIDO(pydle.Client):
             for sig in (signal.SIGTERM, signal.SIGINT):
                 loop.remove_signal_handler(sig)
             self._startup_timer.cancel()
+            self._cancel_sasl_deadline()
             if self.connected:
                 await self.disconnect(expected=True)
-            tasks = [task for task in (watchdog, connecting, self._read_task) if task is not None]
+            tasks = [task for task in (watchdog, connecting, self._read_task, self._sasl_timeout_task)
+                     if task is not None]
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -108,7 +119,7 @@ class FIDO(pydle.Client):
     def end_session(self, code: int, reason: str):
         """
         Resolve the session's exit code; only the first call counts. A failure waits until any OPER
-        back-off has passed, a shutdown (EXIT_OK) does not wait.
+        or SASL back-off has passed, a shutdown (EXIT_OK) does not wait.
         """
         exit_code = self._exit_code
         if exit_code is None or exit_code.done():
@@ -242,16 +253,153 @@ class FIDO(pydle.Client):
             log.warning(f"snomask {self.snomask} differs from the expected {IRC.expectSnomask}")
 
     def _oper_failed(self, reason: str):
+        self._failed_with_backoff('OPER', reason)
+
+    def _failed_with_backoff(self, what: str, reason: str):
+        """Log the failure and end the session, holding the exit for OPER_FAIL_BACKOFF seconds."""
         backoff = OPER_FAIL_BACKOFF
-        log.error(f"OPER failed ({reason}), exiting in {backoff} s")
+        log.error(f"{what} failed ({reason}), exiting in {backoff} s")
         self._exit_not_before = asyncio.get_running_loop().time() + backoff
-        self.end_session(EXIT_SESSION_LOST, f"OPER failed: {reason}")
+        self.end_session(EXIT_SESSION_LOST, f"{what} failed: {reason}")
 
     async def _send_oper(self):
         """Write OPER straight to the connection: pydle's _send logs every line it sends at DEBUG."""
         line = f"OPER {IRC.operline} {IRC.operlinePassword}\r\n"  # raw bytes, so the CRLF is required
         await self.connection.send(line.encode(self.encoding))
         log.info(f"OPER sent for {IRC.operline}")
+
+    # SASL PLAIN login to FIDO's services account, which groupsync grants channel status to
+
+    def _reset_attributes(self):
+        """pydle calls this when the client is built and on every disconnect."""
+        self._cancel_sasl_deadline()
+        super()._reset_attributes()
+        self._cap_ls_buffer = []
+        self._sasl_awaiting_challenge = False
+
+    @staticmethod
+    def _sasl_configured() -> bool:
+        return bool(IRC.saslUsername and IRC.saslPassword)
+
+    async def on_raw_cap_ls(self, params):
+        """
+        A CAP LS 302 reply may span lines; every line but the last puts '*' before its list, and
+        pydle reads only params[0], so the lines are joined first. Only sasl goes on to pydle, so
+        no other IRCv3 capability changes FIDO's behaviour. pydle also routes CAP NEW here, as a
+        single list, which passes straight through to the filter.
+        """
+        if len(params) > 1 and params[0] == '*':
+            self._cap_ls_buffer.extend(params[1].split())
+            return
+        offered = self._cap_ls_buffer + (params[0].split() if params else [])
+        self._cap_ls_buffer = []
+        wanted = [cap for cap in offered if self._capability_normalize(cap)[0] == SASL_CAPABILITY]
+        if not wanted and not self.registered and self._sasl_configured():
+            log.warning("The server offers no SASL (services down?): logging in when CAP NEW announces it")
+        await super().on_raw_cap_ls([' '.join(wanted)])
+
+    async def on_capability_sasl_available(self, value):
+        """Request sasl only with credentials set and PLAIN listed; pydle lowercases the list."""
+        if not self._sasl_configured():
+            return False
+        if SASL_MECHANISM not in (value or '').upper().split(','):
+            log.warning(f"The server offers SASL without {SASL_MECHANISM} ({value or 'no list'}): not logging in")
+            return False
+        return True
+
+    async def on_capability_sasl_enabled(self):
+        """The server acknowledged sasl: start PLAIN. NEGOTIATING holds CAP END until _sasl_finish()."""
+        self._sasl_awaiting_challenge = True
+        self._sasl_deadline = asyncio.get_running_loop().call_later(SASL_TIMEOUT, self._sasl_deadline_passed)
+        await self.rawmsg('AUTHENTICATE', SASL_MECHANISM)
+        return pydle.CAPABILITY_NEGOTIATING
+
+    async def on_raw_authenticate(self, message):
+        """The server's challenge; for PLAIN it is the empty one, '+'."""
+        if not self._sasl_awaiting_challenge:
+            log.warning("AUTHENTICATE from the server outside a SASL exchange, ignored")
+            return
+        self._sasl_awaiting_challenge = False
+        if message.params != [SASL_EMPTY]:
+            log.warning(f"SASL {SASL_MECHANISM} got a non-empty challenge: aborting")
+            await self.rawmsg('AUTHENTICATE', SASL_ABORT)
+            await self._sasl_finish()
+            return
+        await self._send_sasl_plain()
+
+    async def _send_sasl_plain(self):
+        """
+        Write the PLAIN response straight to the connection, as _send_oper does, so pydle's DEBUG
+        send log never sees it. The base64 goes out in SASL_CHUNK pieces, and a last piece of
+        exactly SASL_CHUNK is followed by 'AUTHENTICATE +'.
+        """
+        response = base64.b64encode(f"\0{IRC.saslUsername}\0{IRC.saslPassword}".encode('utf-8')).decode('ascii')
+        pieces = [response[start:start + SASL_CHUNK] for start in range(0, len(response), SASL_CHUNK)]
+        if len(response) % SASL_CHUNK == 0:
+            pieces.append(SASL_EMPTY)
+        lines = ''.join(f"AUTHENTICATE {piece}\r\n" for piece in pieces)  # raw bytes, so the CRLF is required
+        await self.connection.send(lines.encode(self.encoding))
+        log.info(f"SASL {SASL_MECHANISM} response sent for {IRC.saslUsername}")
+
+    async def _sasl_finish(self):
+        """End FIDO's SASL exchange; CAP END goes out only while registration waits for it."""
+        self._cancel_sasl_deadline()
+        self._sasl_awaiting_challenge = False
+        if SASL_CAPABILITY not in self._capabilities_negotiating:
+            return
+        if self.registered:
+            self._capabilities_negotiating.discard(SASL_CAPABILITY)
+            return
+        await self._capability_negotiated(SASL_CAPABILITY)
+
+    def _cancel_sasl_deadline(self):
+        if self._sasl_deadline is not None:
+            self._sasl_deadline.cancel()
+            self._sasl_deadline = None
+
+    def _sasl_deadline_passed(self):
+        self._sasl_deadline = None
+        self._sasl_timeout_task = asyncio.get_running_loop().create_task(self._sasl_timed_out())
+
+    async def _sasl_timed_out(self):
+        self._failed_with_backoff('SASL', f"no reply within {SASL_TIMEOUT} s")
+        if not self.connected:
+            return
+        await self.rawmsg('AUTHENTICATE', SASL_ABORT)
+        await self._sasl_finish()
+
+    async def on_raw_900(self, message):
+        """RPL_LOGGEDIN: <nick> <nick!user@host> <account> :You are now logged in as <account>."""
+        account = message.params[2] if len(message.params) > 2 else 'an unnamed account'
+        log.info(f"SASL logged in as {account}")
+
+    async def on_raw_901(self, message):
+        """RPL_LOGGEDOUT."""
+        log.warning("Logged out of the services account (901)")
+
+    async def on_raw_903(self, message):
+        """RPL_SASLSUCCESS."""
+        await self._sasl_finish()
+
+    async def on_raw_904(self, message):
+        """ERR_SASLFAIL: wrong password, or the account is suspended or unconfirmed."""
+        self._failed_with_backoff('SASL', "904 authentication failed")
+        await self._sasl_finish()
+
+    async def on_raw_905(self, message):
+        """ERR_SASLTOOLONG."""
+        self._failed_with_backoff('SASL', "905 message too long")
+        await self._sasl_finish()
+
+    async def on_raw_906(self, message):
+        """ERR_SASLABORTED: the server's own SASL timeout, or its answer to AUTHENTICATE *."""
+        log.warning("SASL aborted (906): continuing without a services login")
+        await self._sasl_finish()
+
+    async def on_raw_907(self, message):
+        """ERR_SASLALREADY: the exchange ends, the earlier login stands."""
+        log.warning("SASL: already logged in (907)")
+        await self._sasl_finish()
 
     # IRC events
 
@@ -310,9 +458,17 @@ class FIDO(pydle.Client):
         """RPL_ENDOFBANLIST: the 367 lines before it already filled the list."""
 
     async def on_nick_change(self, old, new):
+        """
+        FIDO never changes its own nick after registering, so its nick moving away from FIDO_NICK
+        is the server's doing (NickServ's forced rename) and ends the session. pydle has already set
+        self.nickname to new, and its synthetic change at 001 starts from '<unregistered>'.
+        """
         await super().on_nick_change(old, new)
         access.forget_oper(self, old)
         access.forget_oper(self, new)
+        if (self.is_same_nick(new, self.nickname) and self.is_same_nick(old, IRC.nickname)
+                and not self.is_same_nick(new, IRC.nickname)):
+            self.end_session(EXIT_SESSION_LOST, f"renamed from {old} to {new} by the server")
 
     async def on_quit(self, user, message=None):
         await super().on_quit(user, message)
@@ -385,6 +541,8 @@ def config_problems() -> list:
         problems.append("FIDO_OPER_NAME is not set")
     if not IRC.operlinePassword:
         problems.append("FIDO_OPER_PASSWORD is not set")
+    if bool(IRC.saslUsername) != bool(IRC.saslPassword):
+        problems.append("FIDO_SASL_USERNAME and FIDO_SASL_PASSWORD must both be set, or both left empty")
     if Logging.level not in logging.getLevelNamesMapping():
         problems.append(f"FIDO_LOG_LEVEL {Logging.level!r} is not a logging level name")
     if IRC.startupDeadline <= 0:

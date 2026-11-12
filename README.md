@@ -20,6 +20,8 @@ case); any other value stops the import with an error naming the variable.
 | `FIDO_NICK` | `FIDO[BOT]` | Nick; registering under any other nick ends the session |
 | `FIDO_OPER_NAME` | none, required | Oper block name |
 | `FIDO_OPER_PASSWORD` | none, required | Oper password; it is never logged |
+| `FIDO_SASL_USERNAME` | empty | Services account FIDO logs in to with SASL PLAIN (a nick of the account). Set it with `FIDO_SASL_PASSWORD`, or leave both empty for no login |
+| `FIDO_SASL_PASSWORD` | empty | Password of that account; it is never logged |
 | `FIDO_EXPECT_SNOMASK` | empty | Snomask expected after OPER; a different one logs a warning. Empty: no check |
 | `FIDO_DB_URL` | `sqlite:///FIDO.sqlite` | SQLAlchemy URL of the database |
 | `FIDO_LOG_LEVEL` | `INFO` | Logging level name; logs go to stdout |
@@ -47,6 +49,16 @@ It replaces every row for the key with one and prints the old and new values. It
 that hold secrets: everything under module `nexmo`, and everything under module `sms` except
 `sms/topic/<group>`.
 
+## Services login
+FIDO's channel status comes from groupsync, which grants it only to clients logged in to a
+services account. With `FIDO_SASL_USERNAME` and `FIDO_SASL_PASSWORD` set, FIDO requests the `sasl`
+capability (and no other IRCv3 capability) during registration and logs in with SASL PLAIN; the
+log shows `SASL logged in as <account>`. When services are down at connect the server does not
+offer `sasl`: FIDO registers, opers and joins without a login, and logs in once when the server
+announces `sasl` with `CAP NEW`. A failed login (904, 905, or no answer within 15 s) ends the
+session after the 300 s hold. Once the nick is registered, NickServ renames an unidentified
+FIDO after its protection delay, and that rename also ends the session.
+
 ## Process contract
 One process runs one IRC session and then exits; it does not reconnect. Run it under a
 supervisor that restarts it, for example a container with `restart: unless-stopped`.
@@ -54,8 +66,8 @@ supervisor that restarts it, for example a container with `restart: unless-stopp
 | Exit code | When |
 |---|---|
 | 0 | SIGTERM or SIGINT: sends QUIT with the reason `restarting`, waits at most 3 s for the server to close the link, exits |
-| 1 | Session lost: the connection closed or failed, the nick differs from `FIDO_NICK`, OPER was not confirmed within `FIDO_STARTUP_DEADLINE`, nothing arrived for `FIDO_SILENCE_LIMIT`, or OPER was refused (464 or 491, after a 300 s hold) |
-| 2 | `FIDO_OPER_NAME` or `FIDO_OPER_PASSWORD` unset, `FIDO_LOG_LEVEL` not a level name, or `FIDO_STARTUP_DEADLINE` or `FIDO_SILENCE_LIMIT` not above 0. A boolean or integer that does not parse stops the import instead (Python exits 1 with the error) |
+| 1 | Session lost: the connection closed or failed, the nick differs from `FIDO_NICK` at registration or the server renamed FIDO away from it later, OPER was not confirmed within `FIDO_STARTUP_DEADLINE`, nothing arrived for `FIDO_SILENCE_LIMIT`, OPER was refused (464 or 491), or the SASL login failed (904, 905, or no answer within 15 s). OPER and SASL failures hold every exit for 300 s, so a wrong password does not restart FIDO in a tight loop |
+| 2 | `FIDO_OPER_NAME` or `FIDO_OPER_PASSWORD` unset, only one of `FIDO_SASL_USERNAME` and `FIDO_SASL_PASSWORD` set, `FIDO_LOG_LEVEL` not a level name, or `FIDO_STARTUP_DEADLINE` or `FIDO_SILENCE_LIMIT` not above 0. A boolean or integer that does not parse stops the import instead (Python exits 1 with the error) |
 
 In a container, point `FIDO_DB_URL` at a mounted volume (for example
 `sqlite:////data/FIDO.sqlite`) so the database outlives the container, and use host networking
