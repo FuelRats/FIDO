@@ -38,4 +38,4 @@ async def on_qline(bot: fido, message: str, match):
     host = match.group('ip') or _client_host(match.group('client'))
     reason = match.group('reason')
     await bot.message(bot.get_oper_channel(),
-                      f"{bot.colour_red('QLINE')} {nick}@{host} refused connection: {reason}")
+                      f"{bot.colour_red('QLINE')} {nick}@{host} refused nick: {reason}")

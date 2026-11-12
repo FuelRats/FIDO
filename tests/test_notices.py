@@ -96,14 +96,14 @@ EXPECTED = {
     'qline_626_unregistered': ('nick.QLINE_NICK_LOCAL_ATTEMPT',
                                dict(nick='ChanServ', client='[2001:db8::30]', ip=None,
                                     reason='Reserved for services (ID: Q1A2B3C4D5E6F)'),
-                               [(OPERS, f"{RED}QLINE{RESET} ChanServ@2001:db8::30 refused connection: "
+                               [(OPERS, f"{RED}QLINE{RESET} ChanServ@2001:db8::30 refused nick: "
                                         f"Reserved for services (ID: Q1A2B3C4D5E6F)")], None),
     'qline_626_registered': ('nick.QLINE_NICK_LOCAL_ATTEMPT',
                              dict(nick='NickServ', client='Jameson!jameson@192.0.2.31', ip=None),
-                             [(OPERS, f"{RED}QLINE{RESET} NickServ@192.0.2.31 refused connection: "
+                             [(OPERS, f"{RED}QLINE{RESET} NickServ@192.0.2.31 refused nick: "
                                       f"Reserved for services")], None),
     'qline_606': ('nick.QLINE_NICK_LOCAL_ATTEMPT', dict(nick='OperServ', client=None, ip='192.0.2.32'),
-                  [(OPERS, f"{RED}QLINE{RESET} OperServ@192.0.2.32 refused connection: Reserved for services")],
+                  [(OPERS, f"{RED}QLINE{RESET} OperServ@192.0.2.32 refused nick: Reserved for services")],
                   None),
     'oper_failed': ('oper.OPER_FAILED',
                     dict(client='Jameson!jameson@192.0.2.40', reason='Authentication failed', block='jameson'),
