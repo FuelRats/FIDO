@@ -1,4 +1,5 @@
 from modules import configmanager
+from modules.access import channel_state
 
 import fido
 import math
@@ -52,6 +53,8 @@ def is_zalgo(s):
 
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
+    if channel_state(bot, channel, "zalgo check skipped") is None:  # the kick needs the channel
+        return
     kick_reason: str = (configmanager.get_value('channelprotection', 'reason_zalgo')
                         or configmanager.get_value('channelprotection', 'reason'))
 

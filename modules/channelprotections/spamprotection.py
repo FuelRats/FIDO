@@ -3,12 +3,14 @@ import logging
 import fido
 from models import messagecounter, session_scope
 from modules import configmanager
-from modules.access import Levels, get_access_level
+from modules.access import Levels, channel_state, get_access_level
 
 log = logging.getLogger(__name__)
 
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
+    if channel_state(bot, channel, "flood check skipped") is None:
+        return
     kick_reason: str = (configmanager.get_value('channelprotection', 'reason_flood')
                         or configmanager.get_value('channelprotection', 'reason'))
     maxmessages: int = int(configmanager.get_value('channelprotection', 'maxmessages'))

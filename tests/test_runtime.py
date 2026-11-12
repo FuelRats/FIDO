@@ -82,6 +82,28 @@ class SessionTestCase(unittest.IsolatedAsyncioTestCase):
     def logged(self, text: str) -> bool:
         return any(text in message for message in self.logs.messages())
 
+    @staticmethod
+    async def sync(ircd, marker: str):
+        """Wait until FIDO has handled every line sent before this: it answers PING in order."""
+        await ircd.send(f"PING :{marker}")
+        await ircd.wait_for_line(f"PONG {marker}")
+
+    @staticmethod
+    def index(ircd, direction: str, predicate) -> int:
+        """Position in the transcript of the first line from direction that matches predicate."""
+        for position, (who, line) in enumerate(ircd.transcript):
+            if who == direction and predicate(line):
+                return position
+        raise AssertionError(f"no {direction} line matched in {ircd.transcript!r}")
+
+    @staticmethod
+    def numeric(code: str):
+        return lambda line: line.split(' ')[1:2] == [code]
+
+    @staticmethod
+    def sent(ircd, prefix: str) -> list:
+        return [line for line in ircd.received if line.startswith(prefix)]
+
     async def opered_session(self, ircd=None, **overrides):
         ircd = ircd or await self.start_ircd()
         self.configure(ircd.port, **overrides)

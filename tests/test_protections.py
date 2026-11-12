@@ -135,6 +135,35 @@ class HighlightTest(ProtectionTestCase):
         self.assertEqual(self.kicks(), [f'KICK {RATCHAT} {SENDER} :Please do not mass highlight.'])
 
 
+class UntrackedChannelTest(ProtectionTestCase):
+    """A channel missing from bot.channels is skipped with a DEBUG line, never a KeyError."""
+
+    CHANNEL = '#rat-ops'
+
+    async def test_protections_skip_a_channel_without_state(self):
+        configmanager.set_config('channelprotection', 'messageinterval', '60')
+        self.bot.add_user(SENDER)
+        with harness.capture_logs(logging.DEBUG) as logs:
+            for _ in range(6):
+                await self.bot.receive(f':{SENDER}!jameson@{HOST} PRIVMSG {self.CHANNEL} :{ZALGO}')
+        self.assertEqual(self.bot.lines, [])
+        self.assertEqual([record.getMessage() for record in logs.records if record.levelno >= logging.WARNING], [])
+        prefix = f'{self.CHANNEL} is not tracked'
+        skipped = [record.getMessage() for record in logs.records
+                   if record.levelno == logging.DEBUG and record.getMessage().startswith(prefix)]
+        self.assertTrue(any('mass highlight' in message for message in skipped), skipped)
+        self.assertTrue(any('flood' in message for message in skipped), skipped)
+        self.assertTrue(any('zalgo' in message for message in skipped), skipped)
+        self.assertEqual(self.db.count('messagecounter'), 0)
+
+    def test_access_level_in_a_channel_without_state_is_none(self):
+        with harness.capture_logs(logging.DEBUG) as logs:
+            level = access.get_access_level(self.bot, self.CHANNEL, SENDER)
+        self.assertEqual(level, access.Levels.NONE)
+        self.assertEqual([(record.levelno, record.getMessage()) for record in logs.records],
+                         [(logging.DEBUG, f'{self.CHANNEL} is not tracked: access level of {SENDER} taken as none')])
+
+
 class DroneTest(ProtectionTestCase):
     def report(self, n):
         return (f'DNSBL -> Jameson{n}!jameson@192.0.2.{n} [192.0.2.{n}] appears in BL zone dnsbl.example.test '

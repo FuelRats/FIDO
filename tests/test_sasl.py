@@ -24,6 +24,8 @@ TIMEOUT = 0.3  # seconds, the lowered SASL_TIMEOUT
 SLACK = 0.1  # seconds of timer jitter allowed
 AT_ONCE = 1.0  # seconds an immediate exit may take
 CHUNK = 400
+# A capability UnrealIRCd 6.2.6 can announce with CAP NEW in the middle of FIDO's SASL exchange.
+MULTILINE_TOKEN = 'draft/multiline=max-bytes=5250,max-lines=15'
 
 
 def plain_response(account: str, password: str) -> str:
@@ -50,15 +52,18 @@ class SASLSessionTestCase(SessionTestCase):
         settings.update(overrides)
         super().configure(port, **settings)
 
-    async def sasl_session(self, cap_ls=CAP_LS_WITH_SASL, accepted=None, answers=True, **overrides):
+    async def sasl_session(self, cap_ls=CAP_LS_WITH_SASL, accepted=None, answers=True, cap_new_in_sasl=None,
+                           **overrides):
         """
         A session with FIDO's SASL credentials set. The fake ircd accepts the password `accepted`
         (default: the configured one) and, with answers=False, never answers AUTHENTICATE PLAIN.
+        cap_new_in_sasl: caps the fake ircd announces with CAP NEW between the PLAIN response and 900.
         """
         ircd = await self.start_ircd()
         ircd.cap_ls = cap_ls
         ircd.sasl_accounts = {ACCOUNT: self.sasl_password if accepted is None else accepted}
         ircd.sasl_answers = answers
+        ircd.cap_new_in_sasl = cap_new_in_sasl
         settings = dict(saslUsername=ACCOUNT, saslPassword=self.sasl_password)
         settings.update(overrides)
         self.configure(ircd.port, **settings)
@@ -68,11 +73,6 @@ class SASLSessionTestCase(SessionTestCase):
     async def shutdown(self, client, task):
         client.request_shutdown()
         self.assertEqual((await self.exit_code(task))[0], fido.EXIT_OK)
-
-    async def sync(self, ircd, marker: str):
-        """Wait until FIDO has handled every line sent before this: it answers PING in order."""
-        await ircd.send(f"PING :{marker}")
-        await ircd.wait_for_line(f"PONG {marker}")
 
     async def settled(self, ircd, client):
         """
@@ -84,22 +84,6 @@ class SASLSessionTestCase(SessionTestCase):
         await ircd.wait_for_line(f"WHOIS {ACCOUNT}")
         await self.sync(ircd, 'settled-1')
         await self.sync(ircd, 'settled-2')
-
-    @staticmethod
-    def index(ircd, direction: str, predicate) -> int:
-        """Position in the transcript of the first line from direction that matches predicate."""
-        for position, (who, line) in enumerate(ircd.transcript):
-            if who == direction and predicate(line):
-                return position
-        raise AssertionError(f"no {direction} line matched in {ircd.transcript!r}")
-
-    @staticmethod
-    def numeric(code: str):
-        return lambda line: line.split(' ')[1:2] == [code]
-
-    @staticmethod
-    def sent(ircd, prefix: str) -> list:
-        return [line for line in ircd.received if line.startswith(prefix)]
 
     def assert_never_logged(self, *values):
         """None of the values appears in any record, formatted, in its msg or in its args."""
@@ -129,6 +113,24 @@ class CapLsContinuationTest(SASLSessionTestCase):
         self.assertLess(cap_end, self.index(ircd, SERVER, self.numeric('001')))
         self.assertLess(self.index(ircd, CLIENT, lambda line: line == 'AUTHENTICATE PLAIN'), cap_end)
         self.assertEqual(ircd.received.count('CAP END'), 1)
+        self.assertTrue(self.logged(f'SASL logged in as {ACCOUNT}'))
+        await self.shutdown(client, task)
+
+    async def test_cap_new_without_sasl_during_the_exchange_neither_warns_nor_ends_negotiation(self):
+        ircd, client, task = await self.sasl_session(cap_new_in_sasl=MULTILINE_TOKEN)
+        await self.settled(ircd, client)
+
+        # The scenario: CAP NEW came after the PLAIN response and before 900.
+        cap_new = self.index(ircd, SERVER, lambda line: f' NEW :{MULTILINE_TOKEN}' in line)
+        response = plain_response(ACCOUNT, self.sasl_password)
+        self.assertLess(self.index(ircd, CLIENT, lambda line: line == f'AUTHENTICATE {response}'), cap_new)
+        self.assertLess(cap_new, self.index(ircd, SERVER, self.numeric('900')))
+        self.assertEqual(ircd.received.count('CAP END'), 1)
+        self.assertLess(self.index(ircd, SERVER, self.numeric('903')),
+                        self.index(ircd, CLIENT, lambda line: line == 'CAP END'))
+        self.assertEqual([requested_caps(line) for line in self.sent(ircd, 'CAP REQ')], [['sasl']])
+        self.assertEqual([record.getMessage() for record in self.logs.records if record.levelno >= logging.WARNING],
+                         [])
         self.assertTrue(self.logged(f'SASL logged in as {ACCOUNT}'))
         await self.shutdown(client, task)
 
@@ -264,6 +266,17 @@ class CapNewTest(SASLSessionTestCase):
         self.assertEqual(len(self.sent(ircd, 'CAP REQ')), 1)
         self.assertEqual(self.sent(ircd, 'AUTHENTICATE PLAIN'), ['AUTHENTICATE PLAIN'])
         self.assertFalse(task.done())
+        await self.shutdown(client, task)
+
+    async def test_cap_new_without_sasl_after_registration_sends_nothing(self):
+        ircd, client, task = await self.sasl_session()
+        await self.settled(ircd, client)
+        before = len(ircd.received)
+        await ircd.cap_new(MULTILINE_TOKEN)
+        await self.sync(ircd, 'after-cap-new')
+        self.assertEqual([line for line in ircd.received[before:] if not line.startswith('PONG ')], [])
+        self.assertEqual([record.getMessage() for record in self.logs.records if record.levelno >= logging.WARNING],
+                         [])
         await self.shutdown(client, task)
 
     async def test_cap_del_and_new_after_a_login_at_connect_send_no_second_authenticate(self):

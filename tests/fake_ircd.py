@@ -8,12 +8,18 @@ as on UnrealIRCd), CAP REQ, and SASL PLAIN. Synthetic data only.
     ircd.oper_reply = '464'           # behaviour knobs, set before the client connects
     ircd.cap_ls = CAP_LS_WITH_SASL
     ircd.sasl_accounts = {'FIDO[BOT]': password}
+    ircd.hold_whois_from = 1          # hold every WHOIS from the first on, until release_whois()
     port = await ircd.start()
     ...
     await ircd.wait_for_line('OPER ')
+    await ircd.release_whois()
     await ircd.cap_new(SASL_TOKEN)    # services link: CAP NEW sasl
     await ircd.close_client(reset=True)
     await ircd.stop()
+
+Every channel the client joins, asked or through `oper_auto_join`, holds the client and
+`channel_users`, has `channel_modes` and lists `channel_bans`, which the replies to JOIN (353/366),
+MODE <channel> (324/329) and MODE <channel> b (367/368) report.
 """
 import asyncio
 import base64
@@ -41,6 +47,9 @@ CAP_LS_WITH_SASL = (_CAP_LS_FIRST.format(sasl=SASL_TOKEN + ' '), _CAP_LS_LAST)
 CLIENT = 'client'  # transcript direction: a line the client sent
 SERVER = 'server'  # transcript direction: a line the server sent
 
+CHANNEL_CREATED = 1700000000  # creation time in 329, and set time of the listed bans
+BAN_SETTER = f'Jameson!jameson@{SERVER_NAME}'
+
 
 def capability_name(token: str) -> str:
     return token.lstrip('-~=').split('=', 1)[0].lower()
@@ -58,6 +67,14 @@ class FakeIRCd:
         self.cap_ls = CAP_LS_WITHOUT_SASL  # lines of the CAP LS reply; () leaves CAP LS unanswered
         self.sasl_accounts = {}  # account -> password that SASL PLAIN accepts; anything else gets 904
         self.sasl_answers = True  # False: AUTHENTICATE PLAIN gets no reply, as when services do not answer
+        self.cap_new_in_sasl = None  # caps a CAP NEW announces between the PLAIN response and its 900/903
+        # From this WHOIS of the connection on (1 = the first), answers wait for release_whois() or,
+        # at the latest, go out just before QUIT's ERROR; 0 holds none.
+        self.hold_whois_from = 0
+        self.oper_auto_join = []  # channels the server joins the client to after 381, as set::oper-auto-join does
+        self.channel_users = []  # other members of every joined channel, with prefixes as NAMES lists them
+        self.channel_modes = '+nt'
+        self.channel_bans = []  # masks that MODE <channel> b lists
         # Observations
         self.received = []  # every line from the client, line ending stripped
         self.transcript = []  # (CLIENT or SERVER, line) in the order sent
@@ -71,6 +88,8 @@ class FakeIRCd:
         self._cap_open = False
         self._offered = {}
         self._sasl_buffer = None
+        self._whois_count = 0
+        self._whois_queue = []
 
     # Control
 
@@ -135,6 +154,13 @@ class FakeIRCd:
         self.nick = new
         await self.send(f":{old}!{old.lower()}@{self.server_name} NICK :{new}")
 
+    async def release_whois(self):
+        """Answer the held WHOIS queries in the order they came, and stop holding."""
+        queue, self._whois_queue = self._whois_queue, []
+        self.hold_whois_from = 0
+        for target in queue:
+            await self._answer_whois(target)
+
     # Protocol
 
     async def _handle(self, reader, writer):
@@ -146,6 +172,8 @@ class FakeIRCd:
         self._cap_open = False
         self._offered = {}
         self._sasl_buffer = None
+        self._whois_count = 0
+        self._whois_queue = []
         try:
             while True:
                 raw = await reader.readline()
@@ -182,8 +210,11 @@ class FakeIRCd:
         elif command == 'WHOIS':
             await self._on_whois(rest.split(' ')[-1].lstrip(':'))
         elif command == 'JOIN' and self._registered:
-            await self.send(f":{self.nick}!{self.nick.lower()}@{self.server_name} JOIN :{rest.split(' ')[0]}")
+            await self._on_join(rest.split(' ')[0])
+        elif command == 'MODE' and self._registered:
+            await self._on_mode(rest.split(' '))
         elif command == 'QUIT':
+            await self.release_whois()
             await self.send(f"ERROR :Closing Link: {self.nick}[127.0.0.1] (Quit: {rest.lstrip(':')})")
             self._writer.close()
 
@@ -224,6 +255,8 @@ class FakeIRCd:
             self._sasl_buffer += data
         if data == '+' or len(data) < SASL_CHUNK:
             encoded, self._sasl_buffer = self._sasl_buffer, None
+            if self.cap_new_in_sasl:
+                await self.cap_new(self.cap_new_in_sasl)
             await self._check_plain(encoded)
 
     async def _check_plain(self, encoded: str):
@@ -266,17 +299,45 @@ class FakeIRCd:
         await self._numeric('376', ":End of /MOTD command.")
 
     async def _on_whois(self, target: str):
-        """Only the client itself exists; pydle waits for 318 or 401 (it asks about '<unregistered>' at 001)."""
+        self._whois_count += 1
+        if 0 < self.hold_whois_from <= self._whois_count:
+            self._whois_queue.append(target)
+            return
+        await self._answer_whois(target)
+
+    async def _answer_whois(self, target: str):
+        """Only the client itself exists, any other nick gets 401; pydle's WHOIS ends at 401 or 318."""
         if target == self.nick:
             await self._numeric('311', f"{target} {target.lower()} {self.server_name} * :{target}")
         else:
             await self._numeric('401', f"{target} :No such nick/channel")
         await self._numeric('318', f"{target} :End of /WHOIS list.")
 
+    async def _on_join(self, channel: str):
+        """The echo, then NAMES (353/366), as UnrealIRCd sends them without extended-join."""
+        await self.send(f":{self.nick}!{self.nick.lower()}@{self.server_name} JOIN :{channel}")
+        await self._numeric('353', f"= {channel} :{' '.join([self.nick, *self.channel_users])}")
+        await self._numeric('366', f"{channel} :End of /NAMES list.")
+
+    async def _on_mode(self, params: list):
+        """MODE <channel> gives 324/329, MODE <channel> b gives 367 per ban and 368; anything else is ignored."""
+        if not params or not params[0].startswith('#'):
+            return
+        channel = params[0]
+        if len(params) == 1:
+            await self._numeric('324', f"{channel} {self.channel_modes}")
+            await self._numeric('329', f"{channel} {CHANNEL_CREATED}")
+        elif params[1:] == ['b']:
+            for mask in self.channel_bans:
+                await self._numeric('367', f"{channel} {mask} {BAN_SETTER} {CHANNEL_CREATED}")
+            await self._numeric('368', f"{channel} :End of Channel Ban List")
+
     async def _on_oper(self):
         if self.oper_reply == OPER_OK:
             await self._numeric('008', f"{self.snomask} :Server notice mask")
             await self._numeric('381', ":You are now an IRC Operator")
+            for channel in self.oper_auto_join:
+                await self._on_join(channel)
         elif self.oper_reply == '464':
             await self._numeric('464', ":Password Incorrect")
         elif self.oper_reply == '491':

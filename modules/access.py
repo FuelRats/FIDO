@@ -29,15 +29,29 @@ class Levels(Enum):
     NONE = 0
 
 
+def channel_state(bot: fido, channel: str, skipped: str):
+    """
+    pydle's state of channel (users, modes ...), or None, with a DEBUG line saying what is skipped,
+    when FIDO has none for it.
+    """
+    state = bot.channels.get(channel)
+    if state is None:
+        log.debug(f"{channel} is not tracked: {skipped}")
+    return state
+
+
 def get_access_level(bot: fido, channel: str, nick: str) -> Levels:
     """
     Gets the access level of a user
     :param bot: Bot instance
     :param channel: Channel to check permission in
     :param nick: Nick of user
-    :return: The user's access level
+    :return: The user's access level; NONE in a channel FIDO has no state for
     """
-    modes = bot.channels[channel]['modes']
+    state = channel_state(bot, channel, f"access level of {nick} taken as none")
+    if state is None:
+        return Levels.NONE
+    modes = state['modes']
     maxlevel = Levels.NONE
     for mode, level in levels.items():
         holders = modes.get(mode)

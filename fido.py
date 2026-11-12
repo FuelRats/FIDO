@@ -227,9 +227,20 @@ class FIDO(pydle.Client):
         await super().on_raw_error(message)
 
     async def on_raw_001(self, message):
+        """
+        RPL_WELCOME, whose first parameter is the nick the server registered FIDO under. pydle
+        handles it with a synthetic NICK from self.nickname to that nick, which waits for a WHOIS
+        (WHOX is unknown before 005) before pydle stores the nick. The end of the MOTD, OPER's
+        oper-auto-join and FIDO's own joins can all come before that answer, and pydle tracks a
+        channel only when the JOIN echo's nick is self.nickname. So self.nickname is set from the
+        parameter first, and the synthetic NICK goes from FIDO's nick to itself.
+        """
+        registered_as = message.params[0]
+        if not self.is_same_nick(registered_as, IRC.nickname):
+            self.end_session(EXIT_SESSION_LOST, f"registered as {registered_as}, not {IRC.nickname}")
+        if not self.registered:
+            self.nickname = registered_as
         await super().on_raw_001(message)
-        if not self.is_same_nick(self.nickname, IRC.nickname):
-            self.end_session(EXIT_SESSION_LOST, f"registered as {self.nickname}, not {IRC.nickname}")
 
     async def on_raw_008(self, message):
         """RPL_SNOMASK."""
@@ -294,8 +305,7 @@ class FIDO(pydle.Client):
         """
         A CAP LS 302 reply may span lines; every line but the last puts '*' before its list, and
         pydle reads only params[0], so the lines are joined first. Only sasl goes on to pydle, so
-        no other IRCv3 capability changes FIDO's behaviour. pydle also routes CAP NEW here, as a
-        single list, which passes straight through to the filter.
+        no other IRCv3 capability changes FIDO's behaviour. A final list without sasl warns.
         """
         if len(params) > 1 and params[0] == '*':
             self._cap_ls_buffer.extend(params[1].split())
@@ -306,6 +316,19 @@ class FIDO(pydle.Client):
         if not wanted and not self.registered and self._sasl_configured():
             log.warning("The server offers no SASL (services down?): logging in when CAP NEW announces it")
         await super().on_raw_cap_ls([' '.join(wanted)])
+
+    async def on_raw_cap_new(self, params):
+        """
+        CAP NEW lists capabilities the server added, such as sasl once services link. Only a sasl
+        that pydle has not seen yet goes on to its CAP LS handling; anything else ends here, since
+        pydle answers a list with nothing to request with CAP END, which during FIDO's SASL exchange
+        would come before 903.
+        """
+        wanted = [cap for cap in (params[0].split() if params else [])
+                  if self._capability_normalize(cap)[0] == SASL_CAPABILITY
+                  and SASL_CAPABILITY not in self._capabilities]
+        if wanted:
+            await super().on_raw_cap_ls([' '.join(wanted)])
 
     async def on_capability_sasl_available(self, value):
         """Request sasl only with credentials set and PLAIN listed; pydle lowercases the list."""
@@ -466,11 +489,19 @@ class FIDO(pydle.Client):
     async def on_raw_368(self, message):
         """RPL_ENDOFBANLIST: the 367 lines before it already filled the list."""
 
+    # UnrealIRCd 6 numerics that pydle has no handler for and would log as "Unknown command" at
+    # WARNING: 396 (displayed host, at connect) and the WHOIS lines 276 (certificate fingerprint),
+    # 320 (swhois), 335 (bot), 344 (country), 379 (user modes) and 569 (ASN). FIDO uses none of
+    # them, and pydle logs every received line at DEBUG already.
+    on_raw_276 = on_raw_320 = on_raw_335 = on_raw_344 = on_raw_379 = on_raw_396 = on_raw_569 = (
+        pydle.BasicClient._ignored)
+
     async def on_nick_change(self, old, new):
         """
         FIDO never changes its own nick after registering, so its nick moving away from FIDO_NICK
         is the server's doing (NickServ's forced rename) and ends the session. pydle has already set
-        self.nickname to new, and its synthetic change at 001 starts from '<unregistered>'.
+        self.nickname to new, and its synthetic change at 001 goes from FIDO's nick to itself (see
+        on_raw_001).
         """
         await super().on_nick_change(old, new)
         access.forget_oper(self, old)
