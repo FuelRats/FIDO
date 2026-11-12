@@ -1,0 +1,33 @@
+# FIDO in production: compose project "fido" in /home/fuelrats/fido-bot, next to this file:
+#   .env      FIDO_TAG only (see dot-env.example); the image is built on the host from the repo
+#   fido.env  mode 0600, the settings and secrets (see fido.env.example)
+#   data/     owned by uid 1000, holds FIDO.sqlite
+# FIDO ends its process when the IRC session is lost; the restart policy reconnects it.
+name: fido
+
+services:
+  fr-fido:
+    image: fr-fido:${FIDO_TAG:?set in .env}
+    container_name: fr-fido
+    # Host networking: FIDO connects from 127.0.0.1, which the ircd's throttle exemption expects.
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: fido.env
+    environment:
+      FIDO_DB_URL: sqlite:////data/FIDO.sqlite
+    volumes:
+      - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
+    # The ircd's certificate covers *.de.fuelrats.com; this name lets FIDO verify it on 127.0.0.1.
+    extra_hosts:
+      - "irc.de.fuelrats.com:127.0.0.1"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 10s

@@ -25,6 +25,8 @@ from tests import harness
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_PY = REPO / 'config.py'
 ENV_EXAMPLE = REPO / 'deploy' / 'fido.env.example'
+# The variables boto3 reads for modules/sms.py, besides the FIDO_ ones config.py reads.
+BOTO3_ENV = {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_DEFAULT_REGION'}
 TOPIC_ARN = 'arn:aws:sns:eu-central-1:123456789012:fido-sms-test'
 
 
@@ -105,7 +107,7 @@ class EnvParsingTest(unittest.TestCase):
             load_config(FIDO_IRC_TLS='sometimes')
 
     def test_env_example_lists_exactly_the_names_read(self):
-        read = set(re.findall(r"env_(?:str|bool|int)\('(FIDO_[A-Z_]+)'", CONFIG_PY.read_text()))
+        read = set(re.findall(r"env_(?:str|bool|int)\('(FIDO_[A-Z_]+)'", CONFIG_PY.read_text())) | BOTO3_ENV
         lines = [line for line in ENV_EXAMPLE.read_text().splitlines() if line and not line.startswith('#')]
         self.assertEqual({line.split('=', 1)[0] for line in lines}, read)
         self.assertTrue(all(line.endswith('=') for line in lines), 'the example holds names only')

@@ -8,7 +8,20 @@ import pydle
 import pydle.connection
 import pydle.protocol
 
-from config import IRC, Logging
+EXIT_OK = 0
+EXIT_SESSION_LOST = 1
+EXIT_CONFIG = 2
+
+try:
+    from config import IRC, Logging
+except ValueError as config_error:
+    # A boolean or integer variable that does not parse. Run as the entry point, that is a
+    # configuration error like those config_problems() finds; imported, the error propagates.
+    if __name__ != '__main__':
+        raise
+    logging.basicConfig(stream=sys.stdout)
+    logging.getLogger(__name__).critical(f"Configuration error: {config_error}")
+    sys.exit(EXIT_CONFIG)
 from models import monitor, session_scope
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
@@ -16,10 +29,6 @@ from modules import access, configmanager
 from modules.newrats import induction
 
 log = logging.getLogger(__name__)
-
-EXIT_OK = 0
-EXIT_SESSION_LOST = 1
-EXIT_CONFIG = 2
 
 OPER_FAIL_BACKOFF = 300  # seconds between a 464/491 or SASL failure and the exit; read at use time, tests lower it
 SHUTDOWN_GRACE = 3  # seconds to wait for the server to close the link after QUIT
