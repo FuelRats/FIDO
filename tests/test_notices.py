@@ -396,7 +396,8 @@ class UnparsedTest(NoticeTestCase):
 
     def test_hourly_summary_logs_the_counts_and_resets_them(self):
         noticehandler.unparsed.update({'kill.KILL_COMMAND': 2, 'tkl.TKL_ADD': 1})
-        start = noticehandler._last_report
+        start = 0.0  # an exact clock value, so start + interval - start is exactly the interval
+        self.enterContext(mock.patch.object(noticehandler, '_last_report', start))
         with harness.capture_logs(logging.DEBUG) as logs:
             noticehandler.report_unparsed(now=start + noticehandler.UNPARSED_REPORT_INTERVAL - 1)
             self.assertEqual(logs.records, [])
@@ -408,7 +409,8 @@ class UnparsedTest(NoticeTestCase):
 
     def test_hourly_summary_is_silent_without_unparsed_notices(self):
         with harness.capture_logs(logging.DEBUG) as logs:
-            noticehandler.report_unparsed(now=noticehandler._last_report + noticehandler.UNPARSED_REPORT_INTERVAL)
+            self.enterContext(mock.patch.object(noticehandler, '_last_report', 0.0))
+            noticehandler.report_unparsed(now=noticehandler.UNPARSED_REPORT_INTERVAL)
         self.assertEqual(logs.records, [])
 
 
