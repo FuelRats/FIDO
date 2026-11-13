@@ -21,7 +21,7 @@ from botocore.stub import Stubber
 
 from models import ircsessions, session_scope
 from modules import configmanager, noticehandler, sms
-from modules.notices import frame, patterns
+from modules.notices import frame, patterns, spamfilter
 from tests import harness
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -30,6 +30,8 @@ REPLAY_PARTS = [REPO / 'modules' / 'notices' / 'frame.py', REPO / 'modules' / 'n
                 REPO / 'tools' / 'replay_notices.py']
 REPLAY_TIMEOUT = 60  # seconds
 CUT_LENGTH = 585  # bytes, where long spamfilter hits were cut in the logs
+LINE_LIMIT = 510  # bytes UnrealIRCd sends of a line to a client, CRLF not counted; the rest is cut
+CLIENT_LINE_LIMIT = 510  # bytes a client may send in one line, CRLF not counted
 
 BOT = harness.BOT_NICK
 SERVER = harness.SERVER_NAME
@@ -41,6 +43,8 @@ TOPIC_ARN = 'arn:aws:sns:eu-central-1:123456789012:fido-sms-test'
 AWS_ENV = {'AWS_ACCESS_KEY_ID': 'AKIAIOSFODNN7EXAMPLE',
            'AWS_SECRET_ACCESS_KEY': 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'}
 OPS_REPLY = 'Your call for help has reached the ops'
+ALERT_WORD = spamfilter.OPS_SIGNAL_WORDS[0]
+ALERT_SMS = ALERT_WORD.upper()  # how the SMS text starts
 
 RED, YELLOW, GREEN, RESET = '\x0304', '\x0308', '\x0303', '\x0f'
 
@@ -113,11 +117,11 @@ EXPECTED = {
                                     cmd='PRIVMSG', target=RATCHAT, text='opsignal my client is stuck in the hangar',
                                     reason=OPS_REPLY, action='block'),
                                [(OPERS, f"OPS1GNAL by Jameson in {RATCHAT}: {OPS_REPLY}")],
-                               f"OPSIGNAL by Jameson in {RATCHAT}: {OPS_REPLY}"),
+                               f"{ALERT_SMS} by Jameson in {RATCHAT}"),
     'spamfilter_ops_private': ('tkl.SPAMFILTER_MATCH',
                                dict(user='~jameson', filter='*OpsSignal*', target='Jameson2', action='block'),
                                [(OPERS, f"OPS1GNAL by Jameson in Jameson2: {OPS_REPLY}")],
-                               f"OPSIGNAL by Jameson in Jameson2: {OPS_REPLY}"),
+                               f"{ALERT_SMS} by Jameson in Jameson2"),
     'spamfilter_nick': ('tkl.SPAMFILTER_MATCH',
                         dict(filter='*badword*', cmd='NICK', target=None, text='Jameson_badword', action='block'),
                         [(OPERS, "SPAMFILTER Jameson -> NICK matched '*badword*' (block)")], None),
@@ -313,7 +317,7 @@ class OriginGuardTest(NoticeTestCase):
         await self.server_notice('spamfilter_ops_channel')
         self.handle.assert_awaited_once()
         self.assertEqual(self.bot.messages(), [(OPERS, f"OPS1GNAL by Jameson in {RATCHAT}: {OPS_REPLY}")])
-        self.assertEqual(self.sms_texts(), [('ops', f"OPSIGNAL by Jameson in {RATCHAT}: {OPS_REPLY}")])
+        self.assertEqual(self.sms_texts(), [('ops', f"{ALERT_SMS} by Jameson in {RATCHAT}")])
 
     async def test_server_notice_to_a_channel_is_ignored(self):
         await self.assert_ignored(OPERS, SERVER)
@@ -327,6 +331,67 @@ class OriginGuardTest(NoticeTestCase):
     async def test_target_matches_in_the_server_case_mapping(self):
         await self.server_notice('spamfilter_ops_channel', target='fido{bot}')
         self.handle.assert_awaited_once()
+
+
+class ForgedSpamfilterTailTest(NoticeTestCase):
+    """
+    A spamfilter hit quotes the client's text, and UnrealIRCd cuts every line it sends at LINE_LIMIT
+    bytes. Client text that imitates the server-written parts of the hit must not change the filter,
+    the ops alert decision or the SMS.
+    """
+    FORGED_REASON = 'FORGED text'
+    # Imitates the separator after the filter name, as in a hit without [cmd: ...].
+    FORGED_SEPARATOR = f"': [reason: {FORGED_REASON}] [action: block]"
+    # Imitates the end of the quoted text and the tail after it.
+    FORGED_TAIL = f"'] [reason: {FORGED_REASON}] [action: block]"
+    PADDING = 'y'
+
+    def wire_line(self, filter_text, user_text, tail="[reason: Prohibited word] [action: block]"):
+        """The NOTICE line of a PRIVMSG hit on #ratchat, as UnrealIRCd 6.2.6 formats it, before any cut."""
+        self.assertLessEqual(len(f'PRIVMSG {RATCHAT} :{user_text}'.encode()), CLIENT_LINE_LIMIT)
+        notice = framed('tkl.SPAMFILTER_MATCH',
+                        f"[Spamfilter] Jameson!jameson@192.0.2.54 matches filter '{filter_text}': "
+                        f"[cmd: PRIVMSG {RATCHAT}: '{user_text}'] {tail}")
+        return f":{SERVER} NOTICE {BOT} :{notice}"
+
+    def cut(self, line: str) -> str:
+        cut = line.encode()[:LINE_LIMIT].decode()
+        self.assertNotEqual(cut, line, 'the line must be longer than the limit')
+        return cut
+
+    async def test_cut_hit_on_another_filter_with_a_forged_separator_is_no_alert(self):
+        user_text = f"badword {ALERT_WORD}{self.FORGED_SEPARATOR} " + self.PADDING * 330
+        await self.bot.receive(self.cut(self.wire_line('*badword*', user_text)))
+        self.send_sms.assert_not_awaited()
+        self.assertEqual(self.bot.messages(), [(OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*badword*' "
+                                                       f"({spamfilter.NO_ACTION})")])
+
+    async def test_cut_hit_on_the_alert_filter_texts_no_client_text(self):
+        alert_filter = f'*{ALERT_WORD}*'
+        before_text = self.wire_line(alert_filter, '').split(f"{RATCHAT}: '", 1)[0] + f"{RATCHAT}: '"
+        forged = f"{ALERT_WORD}{self.FORGED_TAIL}"
+        texts = {
+            'cut inside the padding': f"{forged} " + self.PADDING * 330,
+            'cut at the end of the forged tail':
+                self.PADDING * (LINE_LIMIT - len(before_text.encode()) - len(forged.encode())) + forged,
+        }
+        for name, user_text in texts.items():
+            with self.subTest(name):
+                self.send_sms.reset_mock()
+                await self.bot.receive(self.cut(self.wire_line(alert_filter, user_text)))
+                self.assertEqual(self.sms_texts(), [('ops', f"{ALERT_SMS} by Jameson in {RATCHAT}")])
+
+    async def test_uncut_hit_reports_the_server_reason_and_action(self):
+        user_text = f"badword {ALERT_WORD}{self.FORGED_SEPARATOR}{self.FORGED_TAIL} pad"
+        await self.bot.receive(self.wire_line('*badword*', user_text, tail='[reason: Advertising] [action: kill]'))
+        await self.bot.receive(self.wire_line(f'*{ALERT_WORD}*', user_text,
+                                              tail=f'[reason: {OPS_REPLY}] [action: block] '
+                                                   f'[spamfilter-id: S1A2B3C4D5E6F]'))
+        self.assertEqual(self.bot.messages(), [
+            (OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*badword*' (kill)"),
+            (OPERS, f"OPS1GNAL by Jameson in {RATCHAT}: {OPS_REPLY}"),
+        ])
+        self.assertEqual(self.sms_texts(), [('ops', f"{ALERT_SMS} by Jameson in {RATCHAT}")])
 
 
 class GateTest(NoticeTestCase):

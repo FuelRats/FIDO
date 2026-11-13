@@ -15,8 +15,10 @@ def is_ops_signal(filter_text: str) -> bool:
 async def on_spamfilter_trigger(bot: fido, message: str, match):
     """
     Handler for tkl.SPAMFILTER_MATCH. An ops alert filter posts OPS1GNAL to the oper channel and
-    texts the ops group; any other filter posts a SPAMFILTER line. A hit cut off by the line limit
-    matches only the head pattern, which has no reason or action.
+    texts the ops group; any other filter posts a SPAMFILTER line. Nick, filter and target come from
+    the server-written head. A hit cut off by the line limit matches only the head pattern, which
+    has no reason or action; a client can shape the end of a cut hit, so the SMS never holds the
+    reason.
     :param bot: bot instance
     :param message: notice text after the frame
     :param match: match of the spamfilter pattern or of its head-only fallback
@@ -35,8 +37,9 @@ async def on_spamfilter_trigger(bot: fido, message: str, match):
                               f"SPAMFILTER {nick} -> {target} matched '{filter_text}' ({action})")
         return
 
-    summary = f"by {nick} in {target}: {reason}" if reason else f"by {nick} in {target}"
+    origin = f"by {nick} in {target}"
     if reports_on:
-        await bot.message(bot.get_oper_channel(), f"OPS1GNAL {summary}")
+        report = f"{origin}: {reason}" if reason else origin
+        await bot.message(bot.get_oper_channel(), f"OPS1GNAL {report}")
     if configmanager.gate_open(configmanager.GATE_SMS):
-        await sms.send_to_group(OPS_GROUP, f"OPSIGNAL {summary}")
+        await sms.send_to_group(OPS_GROUP, f"OPSIGNAL {origin}")
