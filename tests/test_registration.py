@@ -4,11 +4,14 @@ registration at 001 with a synthetic NICK whose handling waits for a WHOIS (WHOX
 before 005) and then for a second WHOIS of FIDO's nick. The tests hold those answers back, by
 their order on the connection, to check the channels FIDO joins at the end of the MOTD, a channel
 the server joins it to after OPER, the nick check at 001 and a shutdown during the second WHOIS.
-Also: the numerics UnrealIRCd 6 sends that pydle has no handler for, and the test harness's check
-for handlers that raise. Synthetic data only.
+Also: the numerics UnrealIRCd 6 sends that pydle has no handler for, lines handled after the
+disconnect, and the test harness's check for handlers that raise. Synthetic data only.
 """
 import asyncio
+import base64
+import contextlib
 import logging
+import secrets
 import unittest
 from unittest import mock
 
@@ -196,6 +199,102 @@ class UnhandledNumericsTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(record.levelno == logging.WARNING and 'Unknown command' in record.getMessage()
                             for record in logs.records))
         self.assertEqual(bot.lines, [])
+
+
+class LinesAfterTheDisconnectTest(unittest.IsolatedAsyncioTestCase):
+    """
+    pydle handles each received line in a task of its own, which can run after the session's
+    teardown disconnected and pydle reset its state, registered included. pydle 1.2.0 handles 002,
+    003 and the 25x/26x numerics like 001, as the end of registration.
+    """
+
+    LATE_LINES = [
+        f":{SERVER_NAME} 002 {BOT} :Your host is {SERVER_NAME}, running version fakeircd-1",
+        f":{SERVER_NAME} 003 {BOT} :This server was created today",
+        f":{SERVER_NAME} 251 {BOT} :There are 2 users and 0 invisible on 1 servers",
+        f":{SERVER_NAME} 266 {BOT} 2 2 :Current global users 2, max 2",
+    ]
+    ERROR_LINE = f"ERROR :Closing Link: {BOT}[192.0.2.1] (Killed ({MEMBER} (testing)))"
+    NOT_SENT = 'Not sent after the disconnect:'  # FIDO's DEBUG line for a dropped write
+
+    async def disconnected_bot(self):
+        bot = harness.FakeBot()
+        bot.whois_from_server = True  # pydle's own WHOIS, written to the connection
+        await bot.disconnect(expected=True)
+        self.assertFalse(bot.connected)
+        self.assertFalse(bot.registered)
+        return bot
+
+    @staticmethod
+    def logged_in(logs, text: str) -> bool:
+        """Whether a captured record, exception text included, contains text."""
+        return any(text in message for message in logs.rendered())
+
+    async def test_registration_lines_after_the_disconnect_send_nothing(self):
+        bot = await self.disconnected_bot()
+        with harness.capture_logs(logging.DEBUG) as logs:
+            for line in self.LATE_LINES:
+                with self.subTest(line.split()[1]):
+                    async with asyncio.timeout(harness.WAIT_TIMEOUT):
+                        await bot.receive(line)
+                    self.assertEqual(bot.lines, [])
+                    self.assertFalse(bot.registered)
+        self.assertFalse(any(harness.PYDLE_HANDLER_FAILURE in message for message in logs.messages()))
+
+    async def test_error_after_the_disconnect_still_logs_the_servers_reason(self):
+        bot = await self.disconnected_bot()
+        with harness.capture_logs(logging.DEBUG) as logs:
+            await bot.receive(self.ERROR_LINE)
+        self.assertTrue(any('Closing Link' in message for message in logs.rendered()), logs.messages())
+        self.assertEqual(bot.lines, [])
+
+    async def test_a_handler_that_resumes_after_the_disconnect_sends_nothing(self):
+        # A shutdown during the WHOIS at 001: 001's handler waits on pydle's WHOIS of FIDO's nick
+        # (no WHOX before 005). Its answer and QUIT's ERROR are handled first, so the handler
+        # resumes after the disconnect, and pydle's AccountSupport WHOISes the nick once more.
+        bot = harness.FakeBot()
+        bot.whois_from_server = True
+        bot.registered = False
+        del bot._isupport['WHOX']
+        bot.shutdown_requested = True
+        with harness.capture_logs(logging.DEBUG) as logs:
+            registration = asyncio.create_task(bot.receive(f":{SERVER_NAME} 001 {BOT} :Welcome to Example"))
+            await bot.whois_pending(BOT)
+            sent = list(bot.lines)
+            await bot.receive(f":{SERVER_NAME} 318 {BOT} {BOT} :End of /WHOIS list.")
+            await bot.receive(f"ERROR :Closing Link: {BOT}[192.0.2.1] (Quit: {fido.QUIT_MESSAGE})")
+            self.assertFalse(bot.connected)
+            async with asyncio.timeout(harness.WAIT_TIMEOUT):
+                while not registration.done() and not self.logged_in(logs, f'{self.NOT_SENT} WHOIS'):
+                    await asyncio.sleep(0)
+            if registration.done():
+                self.fail(f"001's handler failed after the disconnect: {registration.exception()}")
+            # pydle's WHOIS now waits for an answer that never comes; asyncio.run cancels it at exit.
+            registration.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await registration
+        self.assertEqual(sent, [f'WHOIS {BOT}'])
+        self.assertEqual(bot.lines, sent)
+        self.assertFalse(self.logged_in(logs, harness.PYDLE_HANDLER_FAILURE))
+        self.assertFalse(self.logged_in(logs, 'Traceback'))
+
+    async def test_credential_writes_after_the_disconnect_are_dropped_without_their_text(self):
+        # OPER and the SASL response skip pydle's _send and its DEBUG log; they reach the
+        # connection directly.
+        oper_password = secrets.token_urlsafe(12)
+        sasl_password = secrets.token_urlsafe(12)
+        bot = await self.disconnected_bot()
+        with mock.patch.multiple(fido.IRC, operline='fido-test', operlinePassword=oper_password,
+                                 saslUsername='fido-test', saslPassword=sasl_password), \
+                harness.capture_logs(logging.DEBUG) as logs:
+            await bot._send_oper()
+            await bot._send_sasl_plain()
+        self.assertEqual(bot.lines, [])
+        self.assertTrue(self.logged_in(logs, f'{self.NOT_SENT} OPER'))
+        self.assertTrue(self.logged_in(logs, f'{self.NOT_SENT} AUTHENTICATE'))
+        sasl_secret = base64.b64encode(f"\0fido-test\0{sasl_password}".encode('utf-8')).decode('ascii')
+        for secret in (oper_password, sasl_password, sasl_secret):
+            self.assertFalse(self.logged_in(logs, secret), "a dropped credential write logged its secret")
 
 
 class FakeBotReceiveTest(unittest.IsolatedAsyncioTestCase):

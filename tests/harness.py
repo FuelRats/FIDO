@@ -27,6 +27,7 @@ PROD_SCHEMA = FIXTURES / 'prod_schema.sql'
 RESERVED_STATEMENT = 'CREATE TABLE sqlite_sequence'
 
 SERVER_NAME = 'irc.example.test'
+SERVER_PORT = 6697  # what a RecordingConnection says it is connected to; no socket is opened
 WAIT_TIMEOUT = 5  # seconds a test waits for the bot to get somewhere
 BOT_NICK = 'FIDO[BOT]'
 USER_NICK = 'Jameson'
@@ -115,19 +116,34 @@ class TempDB:
             return connection.execute(f'select count(*) from "{table}"').fetchone()[0]
 
 
-class RecordingConnection:
-    """Stands in for pydle's Connection and keeps every line sent, without the line ending."""
+class RecordingWriter:
+    """The stream writer of a RecordingConnection: keeps every line written, without the line ending."""
 
-    def __init__(self, hostname=SERVER_NAME):
-        self.hostname = hostname
-        self.connected = True
-        self.lines = []
+    def __init__(self, lines: list):
+        self.lines = lines
 
-    async def send(self, data: bytes):
+    def write(self, data: bytes):
         self.lines.extend(data.decode('utf-8').splitlines())
 
-    async def disconnect(self):
-        self.connected = False
+    async def drain(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class RecordingConnection(fido.ServerNameConnection):
+    """
+    FIDO's own connection class without a socket: its writer keeps every line sent, and send,
+    connected and disconnect are FIDO's and pydle's, so a write after the disconnect behaves as in
+    a session.
+    """
+
+    def __init__(self, hostname=SERVER_NAME):
+        super().__init__(hostname, SERVER_PORT)
+        self.lines = []
+        self.reader = object()  # never read; pydle's connected needs a reader and a writer
+        self.writer = RecordingWriter(self.lines)
 
 
 class FakeBot(fido.FIDO):

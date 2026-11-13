@@ -47,6 +47,7 @@ SASL_EMPTY = '+'  # empty challenge, or the end of a response that filled its la
 SASL_ABORT = '*'
 WHOIS_SERVICE = 'is a Network Service'  # the 313 text UnrealIRCd sends for a services bot (umode +S)
 DB_CHECK_ROW = {'module': 'fido', 'key': 'startup_check', 'value': 'rolled back'}  # written, never committed
+ERROR_COMMAND = 'ERROR'  # the server's last line before it closes the link; pydle upper-cases commands
 
 
 class ServerNameConnection(pydle.connection.Connection):
@@ -68,6 +69,19 @@ class ServerNameConnection(pydle.connection.Connection):
             ),
             timeout=self.CONNECT_TIMEOUT,
         )
+
+    async def send(self, data):
+        """
+        Every line FIDO writes ends here: pydle's _send (rawmsg, message, QUIT ...) and FIDO's own
+        OPER and SASL writes alike. After disconnect() there is no writer, and a handler that
+        resumes then (one that waited on a WHOIS across the disconnect) would fail on it; its line
+        is dropped instead. The DEBUG line names only the command, as the line can hold a password.
+        """
+        if not self.connected:
+            command = data.split(b' ', 1)[0].strip().decode('ascii', errors='replace')
+            log.debug(f"Not sent after the disconnect: {command}")
+            return
+        await super().send(data)
 
 
 class FIDO(pydle.Client):
@@ -221,6 +235,19 @@ class FIDO(pydle.Client):
     async def on_data(self, data):
         self._last_line = asyncio.get_running_loop().time()
         await super().on_data(data)
+
+    async def on_raw(self, message):
+        """
+        pydle handles each received line in a task of its own, which can run after the disconnect:
+        the connection has no writer then, and pydle has reset its state, registered included, so
+        002, 003 or a 25x/26x numeric would start registration again and WHOIS. Such a line is
+        dropped. ERROR still goes through: its handler only logs the server's reason, and its
+        disconnect is a no-op once disconnected.
+        """
+        if not self.connected and message.command != ERROR_COMMAND:
+            log.debug(f"<< {message._raw} (dropped: handled after the disconnect)")
+            return
+        await super().on_raw(message)
 
     async def on_disconnect(self, expected):
         await super().on_disconnect(expected)
