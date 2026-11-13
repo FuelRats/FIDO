@@ -1,24 +1,19 @@
-import re
 import fido
-from models import SessionManager, config
-
-regex = re.compile(
-    '.* Received KILL message for (?P<nick>[A-Za-z0-9_´|\[\]]*) \((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) from (?P<sender>[A-Za-z0-9_´|\[\]]*): (?P<reason>.*)$',
-    re.I)
+from modules import configmanager
 
 
-async def on_kill(bot: fido, message:str, match):
+async def on_kill(bot: fido, message: str, match):
     """
-    Handler for the kill notice
+    Handler for kill.KILL_COMMAND: report the kill to the oper channel.
     :param bot: bot instance
-    :param message: message
-    :param match: regex match
-    :return: The reply message
+    :param message: notice text after the frame
+    :param match: match of patterns.PATTERNS['kill.KILL_COMMAND']
     """
-    operchannel = bot.get_oper_channel()
-    nick = match.group('nick')
-    host = match.group('host')
-    sender = match.group('sender')
+    if not configmanager.gate_open(configmanager.GATE_OPERS_REPORTS):
+        return
+    nick, _, userhost = match.group('target').partition('!')
+    host = userhost.rpartition('@')[2]
+    sender = match.group('by')
     reason = match.group('reason')
-    await bot.message(operchannel,
+    await bot.message(bot.get_oper_channel(),
                       f"{bot.colour_red('KILL')} {nick} ({host}) was killed by {sender} with message: {reason}")

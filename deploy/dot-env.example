@@ -1,0 +1,3 @@
+# Copy to .env next to compose.yml. It holds only the image tag: the short commit SHA the image
+# was built from (docker build -t fr-fido:<short sha> .). Settings and secrets go in fido.env.
+FIDO_TAG=

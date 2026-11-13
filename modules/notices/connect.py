@@ -1,46 +1,41 @@
-import re
 import fido
-from modules import sessiontracker
+from modules import configmanager, sessiontracker
 from modules.networkprotection import asn_blacklist
-
-regex = re.compile(
-    '.* (Client connecting: (?P<nick>[A-Za-z0-9_´|\[\]]*) '
-    '\((?P<user>[A-Za-z0-9_´|\[\]]*)@(?P<host>[A-Za-z0-9.:_\-]*)\) \[(?P<filter>[0-9.:A-F-a-f]*)\])',
-    re.I)
-
-qline = re.compile(
-    '.* Forbidding Q-lined nick (?P<nick>[A-Za-z0-9_´|\[\]]*) from \[(?P<host>[0-9.:A-F-a-f]*)\] '
-    '\((?P<reason>.*)\)', re.I)
 
 
 async def on_connect(bot: fido, message: str, match):
     """
-    Handler for connection notification to the server,
-    saving sessions.
+    Handler for connect.LOCAL_CLIENT_CONNECT and connect.REMOTE_CLIENT_CONNECT: record the session,
+    report clones and G-Line clients from banned ASNs. Both use the client's IP, never its hostname.
     :param bot: bot instance
-    :param message: message
-    :param match: regex match
-    :return: Optional, returns if a clone is detected
+    :param message: notice text after the frame
+    :param match: match of the connect pattern
     """
-
     nick = match.group('nick')
-    hostmask = match.group('host')
-    await sessiontracker.check_clone(bot, nick, hostmask)
-    await asn_blacklist.protect_banned_asn(bot, nick, hostmask)
+    ip = match.group('ip')
+    await sessiontracker.check_clone(bot, nick, ip)
+    await asn_blacklist.protect_banned_asn(bot, nick, ip)
+
+
+def _client_host(client: str) -> str:
+    """The host of nick!user@host, or the address of an unregistered client shown as [address]."""
+    host = client.rpartition('@')[2]
+    if host.startswith('[') and host.endswith(']'):
+        return host[1:-1]
+    return host
 
 
 async def on_qline(bot: fido, message: str, match):
     """
-    Handler for qlined connections
+    Handler for nick.QLINE_NICK_LOCAL_ATTEMPT: report the refused nick to the oper channel.
     :param bot: bot instance
-    :param message: message
-    :param match: regex match
-    :return: The reply message
+    :param message: notice text after the frame
+    :param match: match of patterns.PATTERNS['nick.QLINE_NICK_LOCAL_ATTEMPT']
     """
-    operchannel = bot.get_oper_channel()
+    if not configmanager.gate_open(configmanager.GATE_OPERS_REPORTS):
+        return
     nick = match.group('nick')
-    host = match.group('host')
+    host = match.group('ip') or _client_host(match.group('client'))
     reason = match.group('reason')
-    await bot.message(operchannel,
-                      f"{bot.colour_red('QLINE')} {nick}@{host} refused connection: {reason}")
-
+    await bot.message(bot.get_oper_channel(),
+                      f"{bot.colour_red('QLINE')} {nick}@{host} refused nick: {reason}")

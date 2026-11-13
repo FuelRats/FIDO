@@ -2,8 +2,7 @@ from typing import List
 
 import fido
 from config import IRC
-from modules import configmanager
-from modules.access import Levels, get_access_level
+from modules.access import is_irc_operator
 
 
 def get_channel(bot: fido, channel: str):
@@ -13,20 +12,15 @@ def get_channel(bot: fido, channel: str):
 
 
 async def puppet(bot: fido, sender: str, args: List[str], is_act: bool):
+    command = "act" if is_act else "say"
     if len(args) < 2:
-        command = "act" if is_act else "say"
         return f"Usage: {IRC.commandPrefix}{command} <channel> <message>"
 
     channel = get_channel(bot, args[0])
     message = ' '.join(args[1:])
 
-    try:
-        permission_channel = configmanager.get_config("channels", "puppet_permission")[0]
-    except IndexError:
-        return
-
-    if get_access_level(bot, permission_channel, sender).value < Levels.OP.value:
-        return "Permission denied"
+    if not await is_irc_operator(bot, sender):
+        return f"You must be an IRC operator to use {IRC.commandPrefix}{command}."
 
     if channel is None:
         return "Invalid channel"

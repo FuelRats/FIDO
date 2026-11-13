@@ -1,19 +1,19 @@
+import logging
 from datetime import datetime
 from typing import List
+
+from sqlalchemy.exc import SQLAlchemyError
+
 from config import IRC
-import requests
-import ipaddress
 import fido
-from requests.exceptions import SSLError
-from OpenSSL.SSL import Error
 
-from modules.access import require_permission, Levels
-from models import monitor
-from models import SessionManager
-from config import SessionHandler
+from modules.access import require_oper
+from models import monitor, session_scope
+
+log = logging.getLogger(__name__)
 
 
-@require_permission(level=Levels.OP, message='DENIED!')
+@require_oper("monitor nicks")
 async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !monitor command
@@ -23,42 +23,28 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     :param args: Arguments passed to the command by the user
     :return: The reply message
     """
-    sessionmanager = SessionManager()
-    session = sessionmanager.session
-
     if len(args) == 0:
         return "Usage: " + IRC.commandPrefix + "monitor <username> <message>"
 
-    lines = []
     nick = args[0]
     message = ' '.join(args[1:])
-    timestamp = datetime.now()
+    reason = f"Reason: {message} ({sender})" if message else f"No reason given ({sender})"
+    try:
+        with session_scope() as session:
+            if session.query(monitor.Monitor).filter(monitor.Monitor.nickname == nick).first() is not None:
+                duplicate = True
+            else:
+                duplicate = False
+                session.add(monitor.Monitor(timestamp=datetime.now(), nickname=nick, msg=reason))
+    except SQLAlchemyError:
+        log.exception("Failed to insert!")
+        await bot.message(channel, "Database error while adding monitor nick.")
+        return
+    if duplicate:
+        await bot.message(channel, f"I am already monitoring for {nick}.")
+        return
+    await bot.monitor(nick)
     if nick in bot.users:
-        whois = await bot.whois(nick)
-        ip = bot.users[nick]['real_ip_address']
-        mon = monitor.Monitor(timestamp=timestamp, nickname=nick, msg=f"Reason: {message} ({sender})"
-                                                                      or f"No reason given ({sender})")
-        try:
-            session.add(mon)
-            session.commit()
-            await bot.monitor(nick)
-        except:
-            print("Failed to insert!")
-            await bot.message(channel, f"Database error while adding monitor nick.")
-            session.rollback()
         await bot.message(channel, f"I am now monitoring for {nick} and possible clones.")
     else:
-        timestamp = datetime.now()
-        nick = args[0]
-        message = ' '.join(args[1:])
-        mon = monitor.Monitor(timestamp=timestamp, nickname=nick, msg=f"Reason: {message} ({sender})"
-                                                                      or f"No reason given ({sender})")
-        try:
-            session.add(mon)
-            session.commit()
-            await bot.monitor(nick)
-        except:
-            print("Failed to insert!")
-            await bot.message(channel, f"Database error while adding monitor nick.")
-            session.rollback()
-        await bot.message(channel, f"Nickname not found online, but I'll keep an eye out for that exact name.")
+        await bot.message(channel, "Nickname not found online, but I'll keep an eye out for that exact name.")

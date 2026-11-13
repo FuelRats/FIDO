@@ -1,63 +1,588 @@
+import asyncio
+import base64
+import logging
+import signal
 import sys
 
 import pydle
-import time, requests
-import logging
+import pydle.connection
+import pydle.protocol
+import sqlalchemy
+from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+EXIT_OK = 0
+EXIT_SESSION_LOST = 1
+EXIT_CONFIG = 2
 
-from config import IRC, Logging, SQLAlchemy
-from models import SessionManager, config, monitor
-from models.config import Config
+
+def exit_on_import_error(problem):
+    """
+    An error while importing the settings or the models, with fido.py run as the entry point, is a
+    configuration error like those config_problems() finds: one line, then exit 2.
+    """
+    logging.basicConfig(stream=sys.stdout)
+    logging.getLogger(__name__).critical(f"Configuration error: {problem}")
+    sys.exit(EXIT_CONFIG)
+
+
+try:
+    from config import IRC, Logging, SessionHandler
+except ValueError as config_error:
+    # A boolean or integer variable that does not parse. Imported, the error propagates.
+    if __name__ != '__main__':
+        raise
+    exit_on_import_error(config_error)
+try:
+    import models
+    from models import config as config_table, meta, monitor, session_scope
+except (ValueError, ArgumentError, ImportError) as db_error:
+    # models builds its engine from FIDO_DB_URL at import: a URL SQLAlchemy cannot read, a query
+    # value it cannot convert, or a dialect whose driver is not installed. Imported, the error
+    # propagates.
+    if __name__ != '__main__':
+        raise
+    exit_on_import_error(f"FIDO_DB_URL: {db_error}")
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
-from modules import sessiontracker
-from modules import configmanager
-from modules import nexmo
+from modules import access, configmanager
 from modules.newrats import induction
 
-logging.basicConfig(stream=sys.stdout, level=Logging.level)
+log = logging.getLogger(__name__)
 
-#baseClient = pydle.featurize(pydle.features.CTCPSupport, pydle.features.AccountSupport,
-#                             pydle.features.IRCv3Support, pydle.features.WHOXSupport, pydle.features.ISUPPORTSupport,
-#                             pydle.features.TLSSupport, pydle.features.ircv3.CapabilityNegotiationSupport,
-#                             pydle.features.ircv3.SASLSupport, pydle.features.ircv3.MonitoringSupport,
-#                             pydle.features.ircv3.TaggedMessageSupport, pydle.features.ircv3.MetadataSupport,
-#                             pydle.features.rfc1459.RFC1459Support)
+OPER_FAIL_BACKOFF = 300  # seconds between a 464/491 or SASL failure and the exit; read at use time, tests lower it
+SHUTDOWN_GRACE = 3  # seconds to wait for the server to close the link after QUIT
+WATCHDOG_INTERVAL = 5  # longest pause between two silence checks, in seconds
+QUIT_MESSAGE = 'restarting'
+SASL_CAPABILITY = 'sasl'
+SASL_MECHANISM = 'PLAIN'
+SASL_TIMEOUT = 15  # seconds from AUTHENTICATE PLAIN to 903/904/905/906; read at use time, tests lower it
+SASL_CHUNK = 400  # base64 bytes per AUTHENTICATE line (IRCv3 SASL)
+SASL_EMPTY = '+'  # empty challenge, or the end of a response that filled its last line
+SASL_ABORT = '*'
+WHOIS_SERVICE = 'is a Network Service'  # the 313 text UnrealIRCd sends for a services bot (umode +S)
+DB_CHECK_ROW = {'module': 'fido', 'key': 'startup_check', 'value': 'rolled back'}  # written, never committed
+ERROR_COMMAND = 'ERROR'  # the server's last line before it closes the link; pydle upper-cases commands
+
+
+class ServerNameConnection(pydle.connection.Connection):
+    """pydle Connection that verifies TLS against, and sends as SNI, a name other than the host it connects to."""
+
+    def __init__(self, *args, server_hostname=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.server_hostname = server_hostname or None
+
+    async def connect(self):
+        self.tls_context = self.create_tls_context() if self.tls else None
+        (self.reader, self.writer) = await asyncio.wait_for(
+            asyncio.open_connection(
+                host=self.hostname,
+                port=self.port,
+                local_addr=self.source_address,
+                ssl=self.tls_context,
+                server_hostname=self.server_hostname if self.tls else None,
+            ),
+            timeout=self.CONNECT_TIMEOUT,
+        )
+
+    async def send(self, data):
+        """
+        Every line FIDO writes ends here: pydle's _send (rawmsg, message, QUIT ...) and FIDO's own
+        OPER and SASL writes alike. After disconnect() there is no writer, and a handler that
+        resumes then (one that waited on a WHOIS across the disconnect) would fail on it; its line
+        is dropped instead. The DEBUG line names only the command, as the line can hold a password.
+        """
+        if not self.connected:
+            command = data.split(b' ', 1)[0].strip().decode('ascii', errors='replace')
+            log.debug(f"Not sent after the disconnect: {command}")
+            return
+        await super().send(data)
 
 
 class FIDO(pydle.Client):
+    """
+    The bot. Any loss of the IRC session ends run_session() with EXIT_SESSION_LOST; there is no
+    in-process reconnect, the container's restart policy starts a fresh process.
+    """
+    RECONNECT_ON_ERROR = False
     operchannel: str = None
 
     def __init__(self, *args, **kwargs):
-        self.recent_greeting = []
+        self.recent_greeting = {}  # normalized nick -> time.monotonic() of the #NewRats greeting
+        self.oper_cache = {}  # normalized nick -> (expiry, is IRC operator); see modules.access
+        self.oper_cache_generation = 0  # bumped by every nick change or quit
+        self._join_waiters = {}  # normalized channel -> future resolved by FIDO's own JOIN echo
+        self.opered = False
+        self.snomask = None
+        self.shutdown_requested = False
+        self._exit_code = None
+        self._exit_not_before = 0.0
+        self._last_line = 0.0
+        self._startup_timer = None
+        self._read_loop_done = None
+        self._read_task = None
+        self._shutdown_task = None
+        self._sasl_deadline = None  # TimerHandle from AUTHENTICATE PLAIN to the final SASL numeric
+        self._sasl_timeout_task = None
         super().__init__(*args, **kwargs)
+
+    # Session lifecycle
+
+    async def run_session(self) -> int:
+        """Connect, run until the session ends, and return the process exit code."""
+        loop = asyncio.get_running_loop()
+        self._exit_code = loop.create_future()
+        self._read_loop_done = asyncio.Event()
+        self._last_line = loop.time()
+        self._startup_timer = loop.call_later(IRC.startupDeadline, self._startup_deadline_passed)
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, self.request_shutdown)
+        watchdog = asyncio.create_task(self._watch_silence())
+        connecting = asyncio.create_task(self._connect_session())
+        try:
+            return await self._exit_code
+        finally:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.remove_signal_handler(sig)
+            self._startup_timer.cancel()
+            self._cancel_sasl_deadline()
+            if self.connected:
+                await self.disconnect(expected=True)
+            tasks = [task for task in (watchdog, connecting, self._read_task, self._sasl_timeout_task)
+                     if task is not None]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _connect_session(self):
+        try:
+            await self.connect(IRC.server, IRC.port, tls=IRC.useSsl, tls_verify=IRC.tlsVerify,
+                               tls_server_name=IRC.tlsServerName)
+        except Exception as error:
+            self.end_session(EXIT_SESSION_LOST, f"connect to {IRC.server}:{IRC.port} failed: {error!r}")
+
+    def end_session(self, code: int, reason: str):
+        """
+        Resolve the session's exit code; only the first call counts. A failure waits until any OPER
+        or SASL back-off has passed, a shutdown (EXIT_OK) does not wait.
+        """
+        exit_code = self._exit_code
+        if exit_code is None or exit_code.done():
+            return
+        loop = exit_code.get_loop()
+        wait = self._exit_not_before - loop.time()
+        if code != EXIT_OK and wait > 0:
+            loop.call_later(wait, self.end_session, code, reason)
+            return
+        if code == EXIT_OK:
+            log.info(f"Session ended: {reason}")
+        else:
+            log.error(f"Session lost, exiting with {code}: {reason}")
+        exit_code.set_result(code)
+
+    def _startup_deadline_passed(self):
+        if not self.opered:
+            self.end_session(EXIT_SESSION_LOST, f"not opered within {IRC.startupDeadline} s of connecting")
+
+    async def _watch_silence(self):
+        loop = asyncio.get_running_loop()
+        interval = min(WATCHDOG_INTERVAL, IRC.silenceLimit / 2)
+        while True:
+            await asyncio.sleep(interval)
+            silent = loop.time() - self._last_line
+            if silent >= IRC.silenceLimit:
+                self.end_session(EXIT_SESSION_LOST, f"no line received for {silent:.0f} s")
+                return
+
+    def request_shutdown(self):
+        """SIGTERM and SIGINT: send QUIT, wait up to SHUTDOWN_GRACE seconds for the close, then exit 0."""
+        if self.shutdown_requested:
+            return
+        self.shutdown_requested = True
+        log.info("Shutdown requested")
+        self._shutdown_task = asyncio.get_running_loop().create_task(self._shutdown())
+
+    async def _shutdown(self):
+        try:
+            async with asyncio.timeout(SHUTDOWN_GRACE):
+                if self.connected:
+                    await self.rawmsg('QUIT', QUIT_MESSAGE)
+                    await self._read_loop_done.wait()
+        except (TimeoutError, OSError) as error:
+            log.warning(f"No clean close after QUIT: {error!r}")
+        self.end_session(EXIT_OK, "shutdown requested")
+
+    # pydle overrides for the session
+
+    async def _connect(self, hostname, port, reconnect=False, password=None,
+                       encoding=pydle.protocol.DEFAULT_ENCODING, channels=None,
+                       tls=False, tls_verify=False, tls_server_name=None, source_address=None):
+        """TLSSupport._connect with a separate TLS server name, which pydle cannot pass on."""
+        self.password = password
+        self._autojoin_channels = channels or []
+        self.connection = ServerNameConnection(
+            hostname,
+            port,
+            source_address=source_address,
+            tls=tls,
+            tls_verify=tls_verify,
+            tls_certificate_file=self.tls_client_cert,
+            tls_certificate_keyfile=self.tls_client_cert_key,
+            tls_certificate_password=self.tls_client_cert_password,
+            server_hostname=tls_server_name,
+        )
+        self.encoding = encoding
+        await self.connection.connect()
+
+    async def handle_forever(self):
+        """pydle's read loop. However it ends, the session ends, unless a shutdown was requested."""
+        self._read_task = asyncio.current_task()
+        try:
+            await super().handle_forever()
+        except Exception as error:
+            log.error(f"Read loop failed: {error!r}")
+        finally:
+            if self._read_loop_done is not None:
+                self._read_loop_done.set()
+            if not self.shutdown_requested:
+                self.end_session(EXIT_SESSION_LOST, "read loop ended")
+
+    async def on_data(self, data):
+        self._last_line = asyncio.get_running_loop().time()
+        await super().on_data(data)
+
+    async def on_raw(self, message):
+        """
+        pydle handles each received line in a task of its own, which can run after the disconnect:
+        the connection has no writer then, and pydle has reset its state, registered included, so
+        002, 003 or a 25x/26x numeric would start registration again and WHOIS. Such a line is
+        dropped. ERROR still goes through: its handler only logs the server's reason, and its
+        disconnect is a no-op once disconnected.
+        """
+        if not self.connected and message.command != ERROR_COMMAND:
+            log.debug(f"<< {message._raw} (dropped: handled after the disconnect)")
+            return
+        await super().on_raw(message)
+
+    async def on_disconnect(self, expected):
+        await super().on_disconnect(expected)
+        if not self.shutdown_requested:
+            self.end_session(EXIT_SESSION_LOST, "disconnected" if expected else "disconnected unexpectedly")
+
+    async def on_raw_error(self, message):
+        if self.shutdown_requested:
+            await self.disconnect(expected=True)
+            return
+        await super().on_raw_error(message)
+
+    async def on_raw_001(self, message):
+        """
+        RPL_WELCOME, whose first parameter is the nick the server registered FIDO under. pydle
+        handles it with a synthetic NICK from self.nickname to that nick, which waits for a WHOIS
+        (WHOX is unknown before 005) before pydle stores the nick. The end of the MOTD, OPER's
+        oper-auto-join and FIDO's own joins can all come before that answer, and pydle tracks a
+        channel only when the JOIN echo's nick is self.nickname. So self.nickname is set from the
+        parameter first, and the synthetic NICK goes from FIDO's nick to itself.
+        """
+        registered_as = message.params[0]
+        if not self.is_same_nick(registered_as, IRC.nickname):
+            self.end_session(EXIT_SESSION_LOST, f"registered as {registered_as}, not {IRC.nickname}")
+        if not self.registered:
+            self.nickname = registered_as
+        await super().on_raw_001(message)
+
+    async def on_raw_008(self, message):
+        """RPL_SNOMASK."""
+        await super().on_raw_008(message)
+        self.snomask = message.params[1] if len(message.params) > 1 else ''
+        if self.opered:
+            self._report_snomask()
+
+    async def on_raw_381(self, message):
+        """RPL_YOUREOPER."""
+        self.opered = True
+        if self._startup_timer is not None:
+            self._startup_timer.cancel()
+        if self.snomask is None:
+            log.info("opered, snomask not reported yet")
+            return
+        self._report_snomask()
+
+    async def on_raw_464(self, message):
+        """ERR_PASSWDMISMATCH."""
+        self._oper_failed("464 password mismatch")
+
+    async def on_raw_491(self, message):
+        """ERR_NOOPERHOST."""
+        self._oper_failed("491 no matching oper block")
+
+    def _report_snomask(self):
+        log.info(f"opered, snomask {self.snomask}")
+        if IRC.expectSnomask and self.snomask != IRC.expectSnomask:
+            log.warning(f"snomask {self.snomask} differs from the expected {IRC.expectSnomask}")
+
+    def _oper_failed(self, reason: str):
+        self._failed_with_backoff('OPER', reason)
+
+    def _failed_with_backoff(self, what: str, reason: str):
+        """Log the failure and end the session, holding the exit for OPER_FAIL_BACKOFF seconds."""
+        backoff = OPER_FAIL_BACKOFF
+        log.error(f"{what} failed ({reason}), exiting in {backoff} s")
+        self._exit_not_before = asyncio.get_running_loop().time() + backoff
+        self.end_session(EXIT_SESSION_LOST, f"{what} failed: {reason}")
+
+    async def _send_oper(self):
+        """Write OPER straight to the connection: pydle's _send logs every line it sends at DEBUG."""
+        line = f"OPER {IRC.operline} {IRC.operlinePassword}\r\n"  # raw bytes, so the CRLF is required
+        await self.connection.send(line.encode(self.encoding))
+        log.info(f"OPER sent for {IRC.operline}")
+
+    # SASL PLAIN login to FIDO's services account, which groupsync grants channel status to
+
+    def _reset_attributes(self):
+        """pydle calls this when the client is built and on every disconnect."""
+        self._cancel_sasl_deadline()
+        super()._reset_attributes()
+        self._cap_ls_buffer = []
+        self._sasl_awaiting_challenge = False
+
+    @staticmethod
+    def _sasl_configured() -> bool:
+        return bool(IRC.saslUsername and IRC.saslPassword)
+
+    async def on_raw_cap_ls(self, params):
+        """
+        A CAP LS 302 reply may span lines; every line but the last puts '*' before its list, and
+        pydle reads only params[0], so the lines are joined first. Only sasl goes on to pydle, so
+        no other IRCv3 capability changes FIDO's behaviour. A final list without sasl warns.
+        """
+        if len(params) > 1 and params[0] == '*':
+            self._cap_ls_buffer.extend(params[1].split())
+            return
+        offered = self._cap_ls_buffer + (params[0].split() if params else [])
+        self._cap_ls_buffer = []
+        wanted = [cap for cap in offered if self._capability_normalize(cap)[0] == SASL_CAPABILITY]
+        if not wanted and not self.registered and self._sasl_configured():
+            log.warning("The server offers no SASL (services down?): logging in when CAP NEW announces it")
+        await super().on_raw_cap_ls([' '.join(wanted)])
+
+    async def on_raw_cap_new(self, params):
+        """
+        CAP NEW lists capabilities the server added, such as sasl once services link. Only a sasl
+        that pydle has not seen yet goes on to its CAP LS handling; anything else ends here, since
+        pydle answers a list with nothing to request with CAP END, which during FIDO's SASL exchange
+        would come before 903.
+        """
+        wanted = [cap for cap in (params[0].split() if params else [])
+                  if self._capability_normalize(cap)[0] == SASL_CAPABILITY
+                  and SASL_CAPABILITY not in self._capabilities]
+        if wanted:
+            await super().on_raw_cap_ls([' '.join(wanted)])
+
+    async def on_capability_sasl_available(self, value):
+        """Request sasl only with credentials set and PLAIN listed; pydle lowercases the list."""
+        if not self._sasl_configured():
+            return False
+        if SASL_MECHANISM not in (value or '').upper().split(','):
+            log.warning(f"The server offers SASL without {SASL_MECHANISM} ({value or 'no list'}): not logging in")
+            return False
+        return True
+
+    async def on_capability_sasl_enabled(self):
+        """
+        The server acknowledged sasl: start PLAIN. NEGOTIATING holds CAP END until _sasl_finish().
+        Each acknowledgement starts the exchange over, with one deadline.
+        """
+        self._sasl_awaiting_challenge = True
+        self._cancel_sasl_deadline()
+        self._sasl_deadline = asyncio.get_running_loop().call_later(SASL_TIMEOUT, self._sasl_deadline_passed)
+        await self.rawmsg('AUTHENTICATE', SASL_MECHANISM)
+        return pydle.CAPABILITY_NEGOTIATING
+
+    async def on_raw_authenticate(self, message):
+        """The server's challenge; for PLAIN it is the empty one, '+'."""
+        if not self._sasl_awaiting_challenge:
+            log.warning("AUTHENTICATE from the server outside a SASL exchange, ignored")
+            return
+        self._sasl_awaiting_challenge = False
+        if message.params != [SASL_EMPTY]:
+            log.warning(f"SASL {SASL_MECHANISM} got a non-empty challenge: aborting")
+            await self.rawmsg('AUTHENTICATE', SASL_ABORT)
+            await self._sasl_finish()
+            return
+        await self._send_sasl_plain()
+
+    async def _send_sasl_plain(self):
+        """
+        Write the PLAIN response straight to the connection, as _send_oper does, so pydle's DEBUG
+        send log never sees it. The base64 goes out in SASL_CHUNK pieces, and a last piece of
+        exactly SASL_CHUNK is followed by 'AUTHENTICATE +'.
+        """
+        response = base64.b64encode(f"\0{IRC.saslUsername}\0{IRC.saslPassword}".encode('utf-8')).decode('ascii')
+        pieces = [response[start:start + SASL_CHUNK] for start in range(0, len(response), SASL_CHUNK)]
+        if len(response) % SASL_CHUNK == 0:
+            pieces.append(SASL_EMPTY)
+        lines = ''.join(f"AUTHENTICATE {piece}\r\n" for piece in pieces)  # raw bytes, so the CRLF is required
+        await self.connection.send(lines.encode(self.encoding))
+        log.info(f"SASL {SASL_MECHANISM} response sent for {IRC.saslUsername}")
+
+    async def _sasl_finish(self):
+        """End FIDO's SASL exchange; CAP END goes out only while registration waits for it."""
+        self._cancel_sasl_deadline()
+        self._sasl_awaiting_challenge = False
+        if SASL_CAPABILITY not in self._capabilities_negotiating:
+            return
+        if self.registered:
+            self._capabilities_negotiating.discard(SASL_CAPABILITY)
+            return
+        await self._capability_negotiated(SASL_CAPABILITY)
+
+    def _cancel_sasl_deadline(self):
+        if self._sasl_deadline is not None:
+            self._sasl_deadline.cancel()
+            self._sasl_deadline = None
+
+    def _sasl_deadline_passed(self):
+        self._sasl_deadline = None
+        self._sasl_timeout_task = asyncio.get_running_loop().create_task(self._sasl_timed_out())
+
+    async def _sasl_timed_out(self):
+        """Runs as its own task, so a final numeric handled before it has already ended the exchange."""
+        if SASL_CAPABILITY not in self._capabilities_negotiating:
+            return
+        self._failed_with_backoff('SASL', f"no reply within {SASL_TIMEOUT} s")
+        if not self.connected:
+            return
+        await self.rawmsg('AUTHENTICATE', SASL_ABORT)
+        await self._sasl_finish()
+
+    async def on_raw_900(self, message):
+        """RPL_LOGGEDIN: <nick> <nick!user@host> <account> :You are now logged in as <account>."""
+        account = message.params[2] if len(message.params) > 2 else 'an unnamed account'
+        log.info(f"SASL logged in as {account}")
+
+    async def on_raw_901(self, message):
+        """RPL_LOGGEDOUT."""
+        log.warning("Logged out of the services account (901)")
+
+    async def on_raw_903(self, message):
+        """RPL_SASLSUCCESS."""
+        await self._sasl_finish()
+
+    async def on_raw_904(self, message):
+        """ERR_SASLFAIL: wrong password, or the account is suspended or unconfirmed."""
+        self._failed_with_backoff('SASL', "904 authentication failed")
+        await self._sasl_finish()
+
+    async def on_raw_905(self, message):
+        """ERR_SASLTOOLONG."""
+        self._failed_with_backoff('SASL', "905 message too long")
+        await self._sasl_finish()
+
+    async def on_raw_906(self, message):
+        """ERR_SASLABORTED: the server's own SASL timeout, or its answer to AUTHENTICATE *."""
+        log.warning("SASL aborted (906): continuing without a services login")
+        await self._sasl_finish()
+
+    async def on_raw_907(self, message):
+        """ERR_SASLALREADY: the exchange ends, the earlier login stands."""
+        log.warning("SASL: already logged in (907)")
+        await self._sasl_finish()
+
+    # IRC events
 
     async def on_connect(self):
         await super().on_connect()
-        logging.info("Connected!")
-        await self.raw(f"OPER {IRC.operline} {IRC.operlinePassword}\r\n")  # DO NOT REMOVE NEWLINE!!!!!!!
-        print(configmanager.get_config(module="channels", key="join"))
+        log.info("Connected!")
+        await self._send_oper()
+        channels = configmanager.get_config(module='channels', key='join')
+        log.info(f"Joining {', '.join(channels) or 'no channels'}")
         # Join remembered channels
-        for channel in configmanager.get_config(module='channels', key='join'):
+        for channel in channels:
             await self.join(channel)
         # TODO: Seed session cache by reading /who output on join?
-        sessionmanager = SessionManager()
-        session = sessionmanager.session
-        monitors = session.query(monitor.Monitor).all()
-        for mon in monitors:
-            await self.monitor(mon.nickname)
+        with session_scope() as session:
+            monitored = [mon.nickname for mon in session.query(monitor.Monitor).all()]
+        for nickname in monitored:
+            await self.monitor(nickname)
 
     async def on_join(self, channel, user):
         await super().on_join(channel, user)
-        if user == self.nickname:
+        if self.is_same_nick(user, self.nickname):
+            waiter = self._join_waiters.get(self.normalize(channel))
+            if waiter is not None and not waiter.done():
+                waiter.set_result(True)
+            # The ban list (367 lines) lets !unmute find the exact mute masks.
+            await self.rawmsg('MODE', channel, 'b')
             return
         await induction.on_join(self, channel, user)
         # TODO: Maybe session cache here instead?
 
-    async def on_raw(self, message):
-        await super().on_raw(message)
+    async def join_confirmed(self, channel: str, timeout: float) -> bool:
+        """Send JOIN and wait up to timeout seconds for the server's echo of FIDO's own JOIN."""
+        key = self.normalize(channel)
+        waiter = asyncio.get_running_loop().create_future()
+        self._join_waiters[key] = waiter
+        try:
+            await self.join(channel)
+            await asyncio.wait_for(waiter, timeout)
+            return True
+        except TimeoutError:
+            return False
+        finally:
+            if self._join_waiters.get(key) is waiter:
+                del self._join_waiters[key]
+
+    async def on_raw_367(self, message):
+        """RPL_BANLIST: one ban list entry, kept in the list pydle updates from +b/-b changes."""
+        channel, mask = message.params[1], message.params[2]
+        if not self.in_channel(channel):
+            return
+        bans = self.channels[channel]['modes'].setdefault('b', [])
+        if mask not in bans:
+            bans.append(mask)
+
+    async def on_raw_368(self, message):
+        """RPL_ENDOFBANLIST: the 367 lines before it already filled the list."""
+
+    async def on_raw_313(self, message):
+        """
+        RPL_WHOISOPERATOR. pydle sets the WHOIS field 'oper' for every 313; UnrealIRCd also sends
+        one, worded WHOIS_SERVICE, for a services bot, which sets 'service' as well.
+        """
+        await super().on_raw_313(message)
+        nickname = message.params[1]
+        if nickname in self._pending['whois'] and message.params[2:3] == [WHOIS_SERVICE]:
+            self._whois_info[nickname]['service'] = True
+
+    async def on_raw_335(self, message):
+        """RPL_WHOISBOT: the user has umode +B; sets the WHOIS field 'bot'."""
+        nickname = message.params[1]
+        if nickname in self._pending['whois']:
+            self._whois_info[nickname]['bot'] = True
+
+    # UnrealIRCd 6 numerics that pydle has no handler for and would log as "Unknown command" at
+    # WARNING: 396 (displayed host, at connect) and the WHOIS lines 276 (certificate fingerprint),
+    # 320 (swhois), 344 (country), 379 (user modes) and 569 (ASN). FIDO uses none of them, and
+    # pydle logs every received line at DEBUG already.
+    on_raw_276 = on_raw_320 = on_raw_344 = on_raw_379 = on_raw_396 = on_raw_569 = pydle.BasicClient._ignored
+
+    async def on_nick_change(self, old, new):
+        """
+        FIDO never changes its own nick after registering, so its nick moving away from FIDO_NICK
+        is the server's doing (NickServ's forced rename) and ends the session. pydle has already set
+        self.nickname to new, and its synthetic change at 001 goes from FIDO's nick to itself (see
+        on_raw_001).
+        """
+        await super().on_nick_change(old, new)
+        access.forget_oper(self, old)
+        access.forget_oper(self, new)
+        if (self.is_same_nick(new, self.nickname) and self.is_same_nick(old, IRC.nickname)
+                and not self.is_same_nick(new, IRC.nickname)):
+            self.end_session(EXIT_SESSION_LOST, f"renamed from {old} to {new} by the server")
+
+    async def on_quit(self, user, message=None):
+        await super().on_quit(user, message)
+        access.forget_oper(self, user)
 
     async def on_channel_message(self, target, nick, message):
         await super().on_channel_message(target, nick, message)
@@ -66,46 +591,113 @@ class FIDO(pydle.Client):
         await channelprotectionhandler.handle_message(self, target, nick, message)
         await commandHandler.on_channel_message(self, target, nick, message)
 
-    async def on_channel_notice(self, target, nick, message):
-        await super().on_channel_notice(target, nick, message)
-
     async def on_ctcp(self, by, target, what, contents):
         await super().on_ctcp(by, target, what, contents)
         if by == self.nickname:
             return
-        if what == 'ACTION':
+        if what == 'ACTION' and self.is_channel(target):
             await channelprotectionhandler.handle_message(self, target, by, contents)
 
     async def on_private_message(self, target, nick, message):
         await super().on_private_message(target, nick, message)
         await commandHandler.on_private_message(self, nick, message)
 
-    async def on_notice(self, target, nick, message):
-        await super().on_notice(target, nick, message)
-        logging.debug(f"target: {target}, nick: {nick}, message: {message}")
+    async def on_notice(self, target, by, message):
+        """
+        Only server notices addressed to FIDO reach the notice handlers. pydle passes the bare server
+        name as `by` for a server prefix and the bare nick for a user; nicks cannot contain a dot.
+        """
+        await super().on_notice(target, by, message)
+        if not (by and '.' in by and self.is_same_nick(target, self.nickname)):
+            return
         await noticehandler.handle_notice(self, message)
 
     async def on_user_online(self, nickname):
         await super().on_user_online(nickname)
-        logging.debug(f"Monitored user {nickname} is online.")
-        await self.message("#rat-ops", f"Monitored user {nickname} is online!")
+        log.debug(f"Monitored user {nickname} is online.")
+        await self.message(self.get_ratops_channel(), f"Monitored user {nickname} is online!")
 
     async def on_user_offline(self, nickname):
         await super().on_user_offline(nickname)
-        logging.debug(f"Monitored user {nickname} is now offline.")
-        await self.message("#rat-ops", f"Monitored user {nickname} is now offline.")
+        log.debug(f"Monitored user {nickname} is now offline.")
+        await self.message(self.get_ratops_channel(), f"Monitored user {nickname} is now offline.")
 
     @staticmethod
     def colour_red(message: str):
         return f"\u000304{message}\u000f"
 
+    @staticmethod
+    def colour_yellow(message: str):
+        return f"\u000308{message}\u000f"
+
+    @staticmethod
+    def colour_green(message: str):
+        return f"\u000303{message}\u000f"
+
     def get_oper_channel(self):
         if self.operchannel is None:
-            session = SessionManager().session
-            self.operchannel = session.query(config.Config).filter_by(module='channels', key='operchannel')[0].value
+            self.operchannel = configmanager.get_value('channels', 'operchannel')
         return self.operchannel
+
+    @staticmethod
+    def get_ratops_channel():
+        return configmanager.get_value('channels', 'ratops')
+
+
+def config_problems() -> list:
+    """Settings main() refuses to start with."""
+    problems = []
+    if not IRC.operline:
+        problems.append("FIDO_OPER_NAME is not set")
+    if not IRC.operlinePassword:
+        problems.append("FIDO_OPER_PASSWORD is not set")
+    if bool(IRC.saslUsername) != bool(IRC.saslPassword):
+        problems.append("FIDO_SASL_USERNAME and FIDO_SASL_PASSWORD must both be set, or both left empty")
+    if Logging.level not in logging.getLevelNamesMapping():
+        problems.append(f"FIDO_LOG_LEVEL {Logging.level!r} is not a logging level name")
+    if IRC.startupDeadline <= 0:
+        problems.append("FIDO_STARTUP_DEADLINE must be above 0")
+    if IRC.silenceLimit <= 0:
+        problems.append("FIDO_SILENCE_LIMIT must be above 0")
+    if SessionHandler.retention_time < 1:
+        problems.append("FIDO_SESSION_RETENTION_DAYS must be at least 1")
+    return problems
+
+
+def database_problems() -> list:
+    """
+    What makes the database at FIDO_DB_URL unusable: a table of the models missing, or a read of the
+    config table or a write failing. The write is rolled back.
+    """
+    try:
+        present = set(sqlalchemy.inspect(models.engine).get_table_names())
+        missing = sorted(set(meta.Base.metadata.tables) - present)
+        if missing:
+            return [f"FIDO_DB_URL: tables missing ({', '.join(missing)}); run python -m scripts.initializedb"]
+        session = models.Session()
+        try:
+            session.query(config_table.Config).first()
+            session.add(config_table.Config(**DB_CHECK_ROW))
+            session.flush()
+        finally:
+            session.rollback()
+            session.close()
+    except SQLAlchemyError as error:
+        return [f"FIDO_DB_URL: the database is not usable: {getattr(error, 'orig', None) or error}"]
+    return []
+
+
+async def main() -> int:
+    """Run one IRC session; the return value is the process exit code."""
+    logging.basicConfig(stream=sys.stdout, level=logging.getLevelNamesMapping().get(Logging.level, logging.INFO))
+    problems = config_problems() or database_problems()
+    if problems:
+        for problem in problems:
+            log.critical(f"Configuration error: {problem}")
+        return EXIT_CONFIG
+    client = FIDO(IRC.nickname)
+    return await client.run_session()
 
 
 if __name__ == '__main__':
-    client = FIDO(IRC.nickname)
-    client.run(IRC.server, IRC.port, tls=IRC.useSsl)
+    sys.exit(asyncio.run(main()))

@@ -1,17 +1,20 @@
+import asyncio
 from typing import List
 from config import IRC
 import requests
 import ipaddress
 import fido
-from requests.exceptions import SSLError
 
-from modules.access import require_permission, Levels
+from modules.access import require_oper
 import logging
 
 log = logging.getLogger(__name__)
 
+HTTP_TIMEOUT = 10  # seconds
+ALLOWED_CHANNELS = ['#opers', '#rat-ops']
 
-@require_permission(level=Levels.OP, message='DENIED!')
+
+@require_oper("fetch IP information")
 async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
     """
     Handler for the !fetch command
@@ -24,8 +27,8 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
 
     if len(args) == 0:
         return "Usage: " + IRC.commandPrefix + "fetch <ip adress1|nickname> [<ip address2> <ip address3> ...]"
-    if channel not in ['#opers', '#rat-ops', '#operations']:
-        print(f"Denied usage because channel is {channel}")
+    if channel not in ALLOWED_CHANNELS:
+        log.info(f"Denied usage because channel is {channel}")
         await bot.message(channel, "This command can only be used in certain channels.")
         return
     lines = []
@@ -33,8 +36,10 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
         ip = ""
         if arg in bot.users:
             whois = await bot.whois(arg)
-            log.debug(f"Whois info: {whois}")
-            ip = bot.users[arg]['real_ip_address']
+            ip = whois.get('real_ip_address') if whois else None
+            if not ip:
+                lines.append(f"No IP address for {arg}: the WHOIS reply had no host line (378).")
+                continue
         else:
             try:
                 ipaddress.ip_address(arg)
@@ -42,10 +47,13 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             except ValueError:
                 return arg + " is an invalid IP Address"
         try:
-            response = requests.get(f'https://ipinfo.io/{ip}', headers={'Accept': 'application/json'}).json()
-        except SSLError:
-            await bot.message(channel, "An SSL error occurred while trying to retrieve IP information.")
-            return
+            response = (await asyncio.to_thread(requests.get, f'https://ipinfo.io/{ip}',
+                                                headers={'Accept': 'application/json'},
+                                                timeout=HTTP_TIMEOUT)).json()
+        except (requests.RequestException, ValueError) as error:
+            log.warning(f"IP information lookup failed: {type(error).__name__}")
+            lines.append(f"Could not fetch IP information for {ip}: {type(error).__name__}")
+            continue
         log.debug(response)
         location = []
         if 'error' in response:

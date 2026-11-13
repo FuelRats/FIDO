@@ -1,42 +1,40 @@
 from typing import List
-from config import IRC
-import requests
-import ipaddress
 import fido
-from modules.access import require_permission, Levels
-from models import SessionManager, config
+from modules.access import require_oper
 from modules import configmanager
+from modules.channelprotections.droneprotection import LOCKDOWN_BAN, LOCKDOWN_CHANNEL, LOCKDOWN_ON, LOCKDOWN_STATE, \
+    in_lockdown
 
 import logging
 
 log = logging.getLogger(__name__)
 
 
-@require_permission(level=Levels.OP, message='DENIED!')
+@require_oper("lock down #ratchat")
 async def lockdown(bot: fido, channel: str, sender: str, args: List[str]):
-    ldstatus = configmanager.get_config('droneprotection', 'lockdown')
-    if ldstatus:
+    if in_lockdown():
         await bot.message(channel, "LOCKDOWN: Lockdown is already in effect.")
     else:
         await bot.message(channel, "LOCKDOWN: Locking down!")
-        await bot.message("#ratchat", f"*** LOCKDOWN INITIATED *** Manual lockdown initiated, "
-                                      f"new connections failing drone scans will now be KILLed and "
-                                      f"non-clients redirected to #NewRats. This may cause some "
-                                      f"clients to not be able to connect.")
-        await bot.raw(f"MODE #ratchat +b ~f:#NewRats:~G:unknown-users\n")
-        configmanager.set_config('droneprotection', 'lockdown', "True")
+        await bot.message(LOCKDOWN_CHANNEL, "*** LOCKDOWN INITIATED *** Manual lockdown initiated, "
+                                            "new connections failing drone scans will now be G-Lined and "
+                                            "non-clients redirected to #NewRats. This may cause some "
+                                            "clients to not be able to connect.")
+        await bot.rawmsg('MODE', LOCKDOWN_CHANNEL, '+b', LOCKDOWN_BAN)
+        configmanager.set_config(*LOCKDOWN_STATE, LOCKDOWN_ON)
+        log.info(f"{sender} started a lockdown")
 
 
-@require_permission(level=Levels.OP, message='DENIED!')
+@require_oper("lift a lockdown")
 async def disable_lockdown(bot: fido, channel: str, sender: str, args: List[str]):
 
-    ldstatus = configmanager.get_config('droneprotection', 'lockdown')
-    if not ldstatus:
+    if not in_lockdown():
         await bot.message(channel, "LOCKDOWN: Lockdown isn't enabled, doing nothing.")
     else:
         await bot.message(channel, "LOCKDOWN: Restoring normal operations.")
-        await bot.message("#ratchat", f"*** LOCKDOWN CLEARED *** Normal operations resumed. Channel "
-                                      f"join restrictions lifted, non-clients will now directly "
-                                      f"join #ratchat.")
-        await bot.raw(f"MODE #ratchat -b ~f:#NewRats:~G:unknown-users\n")
-        configmanager.del_config('droneprotection', 'lockdown')
+        await bot.message(LOCKDOWN_CHANNEL, "*** LOCKDOWN CLEARED *** Normal operations resumed. Channel "
+                                            "join restrictions lifted, non-clients will now directly "
+                                            "join #ratchat.")
+        await bot.rawmsg('MODE', LOCKDOWN_CHANNEL, '-b', LOCKDOWN_BAN)
+        configmanager.del_config(*LOCKDOWN_STATE)
+        log.info(f"{sender} lifted a lockdown")
