@@ -1,4 +1,4 @@
 pydle==1.2.0
-SQLAlchemy>=2.0,<2.1
+SQLAlchemy>=2.1.8,<2.2
 requests
 boto3
