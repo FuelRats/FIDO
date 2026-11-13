@@ -52,10 +52,11 @@ python -m scripts.set_config <module> <key> <value>
 ```
 It replaces every row for the key with one and prints the old and new values. It refuses keys
 that hold secrets: everything under module `nexmo`, and everything under module `sms` except
-`sms/topic/<group>`. It also refuses values FIDO could not read: anything but `on` or `off` for a
-gate, and a non-integer for a key whose default is an integer (`channelprotection` keys
-`droneinterval`, `maxdrones`, `maxhighlightcount`, `maxmessages`, `messageinterval` and
-`mutetime`). Refusals exit with code 2.
+`sms/topic/<group>`. It refuses a module or key that differs only in case from a gate or from a
+key with a default, as FIDO would never read it (`Notices sms`). It also refuses values FIDO could
+not read: anything but `on` or `off` for a gate, and anything but an integer of at least 1 for a
+key whose default is an integer (`channelprotection` keys `droneinterval`, `maxdrones`,
+`maxhighlightcount`, `maxmessages`, `messageinterval` and `mutetime`). Refusals exit with code 2.
 
 Five gates switch behaviour on and off this way. Each is `on` or `off`; a missing row means on.
 

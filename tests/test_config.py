@@ -279,6 +279,35 @@ class SetConfigScriptTest(unittest.TestCase):
         self.assertEqual(configmanager.get_value('channelprotection', 'maxmessages'), '7')
         self.assertEqual(self.run_script('channelprotection', 'reason', 'Flooding')[0], set_config.EXIT_OK)
 
+    def test_keys_with_an_integer_default_take_no_integer_below_one(self):
+        for key in ('droneinterval', 'maxdrones', 'maxhighlightcount', 'maxmessages', 'messageinterval',
+                    'mutetime'):
+            for value in ('0', '-1', '-25'):
+                with self.subTest(key=key, value=value):
+                    code, out, err = self.run_script('channelprotection', key, value)
+                    self.assertEqual(code, set_config.EXIT_REFUSED)
+                    self.assertEqual(out, '')
+                    self.assertIn(f'Refusing channelprotection/{key}: the value must be an integer of at least 1',
+                                  err)
+                    self.assertEqual(configmanager.get_config('channelprotection', key), [])
+            self.assertEqual(self.run_script('channelprotection', key, '1')[0], set_config.EXIT_OK, key)
+            self.assertEqual(configmanager.get_value('channelprotection', key), '1')
+
+    def test_a_known_key_spelled_in_another_case_is_refused(self):
+        cases = {('Notices', 'sms', 'off'): 'notices/sms', ('notices', 'SMS', 'off'): 'notices/sms',
+                 ('channelprotection', 'MaxMessages', '7'): 'channelprotection/maxmessages'}
+        for (module, key, value), spelling in cases.items():
+            with self.subTest(module=module, key=key):
+                code, out, err = self.run_script(module, key, value)
+                self.assertEqual(code, set_config.EXIT_REFUSED)
+                self.assertEqual(out, '')
+                self.assertIn(f'Refusing {module}/{key}: FIDO reads {spelling}', err)
+                self.assertEqual(configmanager.get_config(module, key), [])
+        self.assertIs(configmanager.gate_open(configmanager.GATE_SMS), True)
+        # A key that is neither a gate nor has a default is still written as given.
+        self.assertEqual(self.run_script('channelprotection', 'reason_flood', 'Flooding')[0], set_config.EXIT_OK)
+        self.assertEqual(configmanager.get_config('channelprotection', 'reason_flood'), ['Flooding'])
+
     def test_a_multi_row_key_is_collapsed_and_reported(self):
         with session_scope() as session:
             session.add_all([config_model.Config(module='channels', key='join', value='#ratchat'),
