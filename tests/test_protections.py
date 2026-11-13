@@ -299,13 +299,20 @@ class GreetingTest(ProtectionTestCase):
         self.bot.add_user(SENDER)
         pending = asyncio.get_running_loop().create_future()
         asked = []
+        send = self.bot.message
 
         async def shared_whois(nickname):
             """pydle answers every WHOIS of one nick sent before the reply with the same future."""
             asked.append(nickname)
             return await pending
 
-        with mock.patch.object(self.bot, 'whois', side_effect=shared_whois):
+        async def yielding_message(target, message):
+            """A message whose write suspends once, as a write to a real socket can."""
+            await asyncio.sleep(0)
+            await send(target, message)
+
+        with mock.patch.object(self.bot, 'whois', side_effect=shared_whois), \
+                mock.patch.object(self.bot, 'message', side_effect=yielding_message):
             joins = [asyncio.create_task(self.join()) for _ in range(3)]
             async with asyncio.timeout(harness.WAIT_TIMEOUT):
                 while len(asked) + sum(join.done() for join in joins) < len(joins):
