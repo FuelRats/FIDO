@@ -11,12 +11,14 @@ import re
 # A spamfilter hit is server-written except for the client's text, which it quotes raw after
 # `[cmd: <command>[ <target>]: '`, and the server cuts every line it sends at the line limit. So the
 # filter name ends at the first `': [cmd: ` or `': [reason: ` after `matches filter '` (the head),
-# and the reason and action are read only where they end the line (the tail).
+# and the reason and action are read only where they end the line (the tail). The optional id
+# after the action is generated (SPAM...) or, for a config or central filter, the block's id label,
+# which UnrealIRCd checks only for length.
 SPAMFILTER_HEAD = (r"^\[Spamfilter\] (?P<nick>[^!\s]+)!(?P<user>[^@\s]+)@(?P<host>\S+) matches filter "
                    r"'(?P<filter>(?:(?!': \[(?:cmd|reason): ).)*)': ")
 SPAMFILTER_CMD = r"\[cmd: (?P<cmd>[A-Z]+)(?: (?P<target>[^:\]\s]+))?"
 SPAMFILTER_TAIL = (r"\[reason: (?P<reason>.*)\] \[action: (?P<action>[^\]]+)\]"
-                   r"(?: \[spamfilter-id: [A-Z0-9]+\])?$")
+                   r"(?: \[spamfilter-id: [^\]\s]+\])?$")
 
 PATTERN_SOURCES = {
     "tkl.TKL_ADD": r"^(?P<type>.+?) added: '(?P<mask>[^']*)' \[(?:reason: (?P<reason>.*)|types: (?P<types>[^\]]*))\] \[by: (?P<by>.*?)\] \[duration: (?P<duration>[^\]]+)\](?: \[id: (?P<id>[A-Z0-9]+)\])?(?: \[spamfilter-id: (?P<sfid>[A-Z0-9]+)\])?$|^Spamfilter added: '(?P<sf>.*)' \[type: ",

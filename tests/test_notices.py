@@ -132,6 +132,12 @@ EXPECTED = {
     'spamfilter_hidden_text': ('tkl.SPAMFILTER_MATCH',
                                dict(filter='*advert*', cmd='PRIVMSG', target=RATCHAT, text=None, action='kill'),
                                [(OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*advert*' (kill)")], None),
+    'spamfilter_id_generated': ('tkl.SPAMFILTER_MATCH',
+                                dict(filter='*advert*', target=RATCHAT, reason='Advertising', action='kill'),
+                                [(OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*advert*' (kill)")], None),
+    'spamfilter_id_lowercase': ('tkl.SPAMFILTER_MATCH',
+                                dict(filter='*badword*', target=RATCHAT, reason='Prohibited word', action='block'),
+                                [(OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*badword*' (block)")], None),
     'connect_local': ('connect.LOCAL_CLIENT_CONNECT',
                       dict(nick='Jameson-2', user='~jameson', host='192.0.2.60', ip='192.0.2.60'), [], None),
     'connect_remote': ('connect.REMOTE_CLIENT_CONNECT',
@@ -158,6 +164,8 @@ EXPECTED = {
 }
 # Fixtures whose connect notice stores a session: name -> (nick, stored hostmask)
 SESSIONS = {'connect_local': ('Jameson-2', '192.0.2.60'), 'connect_remote': ('Jameson_3', '2001:db8::61')}
+# The oper channel line of an ops alert hit by Jameson in #ratchat that shows no reason.
+ALERT_REPORT = EXPECTED['spamfilter_cut_585'][2][0][1]
 
 
 def framed(event, text, level='info'):
@@ -359,27 +367,47 @@ class ForgedSpamfilterTailTest(NoticeTestCase):
         self.assertNotEqual(cut, line, 'the line must be longer than the limit')
         return cut
 
+    def ending_at_the_limit(self, filter_text, forged):
+        """Client text that ends with forged where the line limit cuts the hit on filter_text."""
+        before_text = self.wire_line(filter_text, '').split(f"{RATCHAT}: '", 1)[0] + f"{RATCHAT}: '"
+        return self.PADDING * (LINE_LIMIT - len(before_text.encode()) - len(forged.encode())) + forged
+
     async def test_cut_hit_on_another_filter_with_a_forged_separator_is_no_alert(self):
-        user_text = f"badword {ALERT_WORD}{self.FORGED_SEPARATOR} " + self.PADDING * 330
-        await self.bot.receive(self.cut(self.wire_line('*badword*', user_text)))
-        self.send_sms.assert_not_awaited()
-        self.assertEqual(self.bot.messages(), [(OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*badword*' "
-                                                       f"({spamfilter.NO_ACTION})")])
+        forged = f"badword {ALERT_WORD}{self.FORGED_SEPARATOR}"
+        texts = {
+            'cut inside the padding': (f"{forged} " + self.PADDING * 330, self.PADDING),
+            'cut at the end of the forged separator': (self.ending_at_the_limit('*badword*', forged), forged),
+        }
+        for name, (user_text, ending) in texts.items():
+            with self.subTest(name):
+                self.send_sms.reset_mock()
+                bot = harness.FakeBot()
+                line = self.cut(self.wire_line('*badword*', user_text))
+                self.assertTrue(line.endswith(ending))
+                await bot.receive(line)
+                self.send_sms.assert_not_awaited()
+                self.assertEqual(bot.messages(), [(OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*badword*' "
+                                                          f"({spamfilter.NO_ACTION})")])
 
     async def test_cut_hit_on_the_alert_filter_texts_no_client_text(self):
         alert_filter = f'*{ALERT_WORD}*'
-        before_text = self.wire_line(alert_filter, '').split(f"{RATCHAT}: '", 1)[0] + f"{RATCHAT}: '"
         forged = f"{ALERT_WORD}{self.FORGED_TAIL}"
         texts = {
-            'cut inside the padding': f"{forged} " + self.PADDING * 330,
-            'cut at the end of the forged tail':
-                self.PADDING * (LINE_LIMIT - len(before_text.encode()) - len(forged.encode())) + forged,
+            'cut inside the padding': (f"{forged} " + self.PADDING * 330, self.PADDING, ALERT_REPORT),
+            # The accepted residual: a cut right after a forged tail puts its reason into the oper
+            # channel line, never into the SMS.
+            'cut at the end of the forged tail': (self.ending_at_the_limit(alert_filter, forged), forged,
+                                                  f"{ALERT_REPORT}: {self.FORGED_REASON}"),
         }
-        for name, user_text in texts.items():
+        for name, (user_text, ending, report) in texts.items():
             with self.subTest(name):
                 self.send_sms.reset_mock()
-                await self.bot.receive(self.cut(self.wire_line(alert_filter, user_text)))
+                bot = harness.FakeBot()
+                line = self.cut(self.wire_line(alert_filter, user_text))
+                self.assertTrue(line.endswith(ending))
+                await bot.receive(line)
                 self.assertEqual(self.sms_texts(), [('ops', f"{ALERT_SMS} by Jameson in {RATCHAT}")])
+                self.assertEqual(bot.messages(), [(OPERS, report)])
 
     async def test_uncut_hit_reports_the_server_reason_and_action(self):
         user_text = f"badword {ALERT_WORD}{self.FORGED_SEPARATOR}{self.FORGED_TAIL} pad"
@@ -391,6 +419,45 @@ class ForgedSpamfilterTailTest(NoticeTestCase):
             (OPERS, f"SPAMFILTER Jameson -> {RATCHAT} matched '*badword*' (kill)"),
             (OPERS, f"OPS1GNAL by Jameson in {RATCHAT}: {OPS_REPLY}"),
         ])
+        self.assertEqual(self.sms_texts(), [('ops', f"{ALERT_SMS} by Jameson in {RATCHAT}")])
+
+
+class SpamfilterIdTest(NoticeTestCase):
+    """
+    An uncut hit ends with the filter's id when it has one: a generated id (SPAM...) for a filter
+    added with /SPAMFILTER, else the id label of a config or central filter, which may hold _ and
+    lowercase letters. The reason and action before it are the server's.
+    """
+
+    @staticmethod
+    def hit(filter_text, reason, ending):
+        return framed('tkl.SPAMFILTER_MATCH',
+                      f"[Spamfilter] Jameson!jameson@192.0.2.57 matches filter '{filter_text}': "
+                      f"[cmd: PRIVMSG {RATCHAT}: 'need a hand'] [reason: {reason}] [action: block]{ending}")
+
+    @staticmethod
+    def msg(notice):
+        return frame.split_frame(frame.strip_formatting(notice)).group('msg')
+
+    def test_every_id_form_keeps_the_reason_and_action(self):
+        endings = {'label with _': ' [spamfilter-id: FR_ALERT]', 'lowercase label': ' [spamfilter-id: badword1]',
+                   'generated': ' [spamfilter-id: SPAMK7Q2X9D]', 'no id': ''}
+        for name, ending in endings.items():
+            with self.subTest(name):
+                msg = self.msg(self.hit('*badword*', 'Prohibited word', ending))
+                found = patterns.PATTERNS['tkl.SPAMFILTER_MATCH'].match(msg)
+                self.assertIsNotNone(found)
+                self.assertEqual((found['filter'], found['reason'], found['action']),
+                                 ('*badword*', 'Prohibited word', 'block'))
+
+    def test_an_id_without_its_closing_bracket_matches_only_the_head(self):
+        msg = self.msg(self.hit('*badword*', 'Prohibited word', ' [spamfilter-id: FR_ALERT'))
+        self.assertIsNone(patterns.PATTERNS['tkl.SPAMFILTER_MATCH'].match(msg))
+        self.assertIsNotNone(patterns.FALLBACKS['tkl.SPAMFILTER_MATCH'].match(msg))
+
+    async def test_alert_hit_with_an_id_label_reports_the_server_reason(self):
+        await self.server_notice(self.hit(f'*{ALERT_WORD}*', OPS_REPLY, ' [spamfilter-id: FR_ALERT]'))
+        self.assertEqual(self.bot.messages(), [(OPERS, f"{ALERT_REPORT}: {OPS_REPLY}")])
         self.assertEqual(self.sms_texts(), [('ops', f"{ALERT_SMS} by Jameson in {RATCHAT}")])
 
 
