@@ -2,5 +2,8 @@
 .idea/
 venv/
 FIDO.log
-*.sqlite
+*.sqlite*
 *.pyc
+deploy/*.env
+deploy/.env
+deploy/data/

@@ -3,8 +3,9 @@
 .idea
 tests
 venv
-*.sqlite*
+**/*.sqlite*
 **/__pycache__
 **/*.pyc
 deploy/*.env
 deploy/.env
+deploy/data
