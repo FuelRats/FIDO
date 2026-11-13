@@ -14,20 +14,34 @@ EXIT_OK = 0
 EXIT_SESSION_LOST = 1
 EXIT_CONFIG = 2
 
-try:
-    from config import IRC, Logging, SessionHandler
-    import models
-    from models import config as config_table, meta, monitor, session_scope
-except (ValueError, ArgumentError) as config_error:
-    # A boolean or integer variable that does not parse, or a FIDO_DB_URL that SQLAlchemy cannot
-    # read (models builds its engine at import). Run as the entry point, that is a configuration
-    # error like those config_problems() finds; imported, the error propagates.
-    if __name__ != '__main__':
-        raise
-    problem = f"FIDO_DB_URL: {config_error}" if isinstance(config_error, ArgumentError) else config_error
+
+def exit_on_import_error(problem):
+    """
+    An error while importing the settings or the models, with fido.py run as the entry point, is a
+    configuration error like those config_problems() finds: one line, then exit 2.
+    """
     logging.basicConfig(stream=sys.stdout)
     logging.getLogger(__name__).critical(f"Configuration error: {problem}")
     sys.exit(EXIT_CONFIG)
+
+
+try:
+    from config import IRC, Logging, SessionHandler
+except ValueError as config_error:
+    # A boolean or integer variable that does not parse. Imported, the error propagates.
+    if __name__ != '__main__':
+        raise
+    exit_on_import_error(config_error)
+try:
+    import models
+    from models import config as config_table, meta, monitor, session_scope
+except (ValueError, ArgumentError, ImportError) as db_error:
+    # models builds its engine from FIDO_DB_URL at import: a URL SQLAlchemy cannot read, a query
+    # value it cannot convert, or a dialect whose driver is not installed. Imported, the error
+    # propagates.
+    if __name__ != '__main__':
+        raise
+    exit_on_import_error(f"FIDO_DB_URL: {db_error}")
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
 from modules import access, configmanager

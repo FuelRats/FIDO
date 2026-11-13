@@ -255,6 +255,27 @@ class ExitTest(ProcessTestCase):
         self.assertTrue(lines[0].startswith('CRITICAL:'), lines)
         self.assertIn('Configuration error: FIDO_DB_URL', lines[0])
 
+    async def test_m_database_url_without_a_driver_or_with_a_bad_value_exits_2_with_one_line(self):
+        db_password = secrets.token_urlsafe(18)
+        cases = {
+            'no PostgreSQL driver': ('postgresql://fido@db.example.test/fido', "No module named 'psycopg2'"),
+            'no PostgreSQL driver, with a password': (f'postgresql://fido:{db_password}@db.example.test/fido',
+                                                      "No module named 'psycopg2'"),
+            'no MySQL driver': ('mysql://fido@db.example.test/fido', "No module named 'MySQLdb'"),
+            'query value': ('sqlite:////data/FIDO.sqlite?timeout=abc', "could not convert string to float"),
+        }
+        for name, (url, problem) in cases.items():
+            with self.subTest(name):
+                fido = await self.start_fido(self.env(free_port(), FIDO_DB_URL=url))
+                code, _ = await fido.exit_code(START_TIMEOUT)
+                self.assertEqual(code, 2)
+                self.assertEqual(fido.stderr(), '')
+                lines = fido.stdout().splitlines()
+                self.assertEqual(len(lines), 1, lines)
+                self.assertTrue(lines[0].startswith('CRITICAL:'), lines)
+                self.assertIn(f'Configuration error: FIDO_DB_URL: {problem}', lines[0])
+                self.assert_absent(fido, db_password, self.password, 'db.example.test')
+
     async def test_i_unparsable_values_exit_2_with_one_line_and_no_traceback(self):
         for name, value, problem in (('FIDO_IRC_PORT', 'abc', 'FIDO_IRC_PORT must be an integer'),
                                      ('FIDO_IRC_TLS', 'sometimes', 'FIDO_IRC_TLS must be one of')):
