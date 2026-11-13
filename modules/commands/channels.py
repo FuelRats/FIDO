@@ -16,10 +16,11 @@ async def join_channel(bot: fido, channel: str, sender: str, args: List[str]):
     :param args: Arguments passed to the command by the user
     :return: The reply message
     """
-    unique = {}  # one join per channel, however it is spelled
+    unique = {}  # one join per channel, however it is spelled; '#a,#b' is two channels
     for arg in args:
-        if arg.startswith('#') and arg not in bot.channels:
-            unique.setdefault(bot.normalize(arg), arg)
+        for name in arg.split(','):
+            if name.startswith('#') and name not in bot.channels:
+                unique.setdefault(bot.normalize(name), name)
     wanted = list(unique.values())
     if not wanted:
         return

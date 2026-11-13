@@ -4,11 +4,13 @@ registration at 001 with a synthetic NICK whose handling waits for a WHOIS (WHOX
 before 005) and then for a second WHOIS of FIDO's nick. The tests hold those answers back, by
 their order on the connection, to check the channels FIDO joins at the end of the MOTD, a channel
 the server joins it to after OPER, the nick check at 001 and a shutdown during the second WHOIS.
-Also: the numerics UnrealIRCd 6 sends that pydle has no handler for. Synthetic data only.
+Also: the numerics UnrealIRCd 6 sends that pydle has no handler for, and the test harness's check
+for handlers that raise. Synthetic data only.
 """
 import asyncio
 import logging
 import unittest
+from unittest import mock
 
 import fido
 from models import config, session_scope
@@ -194,6 +196,25 @@ class UnhandledNumericsTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(record.levelno == logging.WARNING and 'Unknown command' in record.getMessage()
                             for record in logs.records))
         self.assertEqual(bot.lines, [])
+
+
+class FakeBotReceiveTest(unittest.IsolatedAsyncioTestCase):
+    """harness.FakeBot.receive fails the test when a handler raises; pydle itself only logs it."""
+
+    LINE = f":{MEMBER}!jameson@192.0.2.10 PRIVMSG #ratchat :hello"
+
+    async def test_a_handler_exception_fails_the_receive(self):
+        bot = harness.FakeBot()
+        with mock.patch.object(bot, 'on_raw_privmsg', side_effect=KeyError('#ratchat')), \
+                harness.capture_logs(logging.DEBUG):
+            with self.assertRaisesRegex(AssertionError, "a pydle handler raised KeyError: '#ratchat'"):
+                await bot.receive(self.LINE)
+
+    async def test_a_handler_that_returns_passes(self):
+        bot = harness.FakeBot()
+        with mock.patch.object(bot, 'on_raw_privmsg') as handler:
+            await bot.receive(self.LINE)
+        handler.assert_awaited_once()
 
 
 if __name__ == '__main__':

@@ -27,7 +27,7 @@ value.
 | `FIDO_EXPECT_SNOMASK` | empty | Snomask expected after OPER; a different one logs a warning. Empty: no check |
 | `FIDO_DB_URL` | `sqlite:///FIDO.sqlite` | SQLAlchemy URL of the database |
 | `FIDO_LOG_LEVEL` | `INFO` | Logging level name; logs go to stdout |
-| `FIDO_SESSION_RETENTION_DAYS` | `90` | Days of IRC sessions kept |
+| `FIDO_SESSION_RETENTION_DAYS` | `90` | Days of IRC sessions kept; at least 1 |
 | `FIDO_STARTUP_DEADLINE` | `90` | Seconds from the start of the connect to the server confirming OPER |
 | `FIDO_SILENCE_LIMIT` | `360` | Seconds without any line from the server before the session counts as lost |
 | `AWS_ACCESS_KEY_ID` | none | AWS key of the IAM user allowed to publish to the SMS topics; read by boto3. Without it every SMS fails, and the failure is logged |
@@ -52,7 +52,10 @@ python -m scripts.set_config <module> <key> <value>
 ```
 It replaces every row for the key with one and prints the old and new values. It refuses keys
 that hold secrets: everything under module `nexmo`, and everything under module `sms` except
-`sms/topic/<group>`.
+`sms/topic/<group>`. It also refuses values FIDO could not read: anything but `on` or `off` for a
+gate, and a non-integer for a key whose default is an integer (`channelprotection` keys
+`droneinterval`, `maxdrones`, `maxhighlightcount`, `maxmessages`, `messageinterval` and
+`mutetime`). Refusals exit with code 2.
 
 Five gates switch behaviour on and off this way. Each is `on` or `off`; a missing row means on.
 
@@ -62,7 +65,7 @@ Five gates switch behaviour on and off this way. Each is `on` or `off`; a missin
 | `notices sms` | The SMS to group `ops` when a spamfilter hit is the ops alert filter |
 | `notices ratchat_link_warnings` | The unstable-link warning in #ratchat |
 | `newrats greeting` | The #NewRats greeting |
-| `channelprotection auto_lockdown` | The automatic lockdown and G-lines after DNSBL reports in #opers |
+| `channelprotection auto_lockdown` | The automatic lockdown and G-lines after DNSBL reports in #opers from IRC operators (not bots or services bots) |
 
 For example, `python -m scripts.set_config notices sms off`. ASN ban and clone reports have no
 gate.
@@ -95,7 +98,7 @@ supervisor that restarts it, for example a container with `restart: unless-stopp
 |---|---|
 | 0 | SIGTERM or SIGINT: sends QUIT with the reason `restarting`, waits at most 3 s for the server to close the link, exits |
 | 1 | Session lost: the connection closed or failed, the nick differs from `FIDO_NICK` at registration or the server renamed FIDO away from it later, OPER was not confirmed within `FIDO_STARTUP_DEADLINE`, nothing arrived for `FIDO_SILENCE_LIMIT`, OPER was refused (464 or 491), or the SASL login failed (904, 905, or no answer within 15 s). OPER and SASL failures hold every exit for 300 s, so a wrong password does not restart FIDO in a tight loop |
-| 2 | Configuration error, logged as one `Configuration error` line per problem: `FIDO_OPER_NAME` or `FIDO_OPER_PASSWORD` unset, only one of `FIDO_SASL_USERNAME` and `FIDO_SASL_PASSWORD` set, `FIDO_LOG_LEVEL` not a level name, `FIDO_STARTUP_DEADLINE` or `FIDO_SILENCE_LIMIT` not above 0, or a boolean or integer variable that does not parse |
+| 2 | Configuration error, logged as one `Configuration error` line per problem: `FIDO_OPER_NAME` or `FIDO_OPER_PASSWORD` unset, only one of `FIDO_SASL_USERNAME` and `FIDO_SASL_PASSWORD` set, `FIDO_LOG_LEVEL` not a level name, `FIDO_STARTUP_DEADLINE` or `FIDO_SILENCE_LIMIT` not above 0, `FIDO_SESSION_RETENTION_DAYS` below 1, a boolean or integer variable that does not parse, a `FIDO_DB_URL` that is not a database URL, or a database FIDO cannot use: before connecting, FIDO checks that every table exists and that it can read the config table and write (a write it rolls back) |
 
 ## Container
 The `Dockerfile` builds the image from the `python:3.12-slim` digest it pins. The build fails if

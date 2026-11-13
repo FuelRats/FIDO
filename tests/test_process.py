@@ -11,6 +11,7 @@ import pathlib
 import secrets
 import signal
 import socket
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -218,6 +219,41 @@ class ExitTest(ProcessTestCase):
         self.assertLess(elapsed, OPER_BACKOFF + EXIT_WITHIN)
         self.assertIn('OPER failed (464 password mismatch)', fido.stdout())
         self.assert_no_traceback(fido)
+
+    async def test_k_database_fido_cannot_use_exits_2_before_connecting(self):
+        empty = os.path.join(self.dir, 'empty.sqlite')
+        sqlite3.connect(empty).close()
+        path = self.db_url[len('sqlite:///'):]
+        cases = {
+            'empty file': (f'sqlite:///{empty}', 'tables missing'),
+            # Opened read-only, as a file FIDO's uid cannot write; a file mode would not stop root.
+            'read-only file': (f'sqlite:///file:{path}?mode=ro&uri=true', 'readonly database'),
+            'unopenable file': (f'sqlite:///{os.path.join(self.dir, "missing", "FIDO.sqlite")}',
+                                'unable to open database file'),
+        }
+        for name, (url, problem) in cases.items():
+            with self.subTest(name):
+                ircd = await self.start_ircd()
+                fido = await self.start_fido(self.env(ircd.port, FIDO_DB_URL=url))
+                code, _ = await fido.exit_code(START_TIMEOUT)
+                self.assertEqual(code, 2)
+                self.assertEqual(ircd.connections, 0)
+                lines = fido.stdout().splitlines()
+                self.assertEqual(len(lines), 1, lines)
+                self.assertTrue(lines[0].startswith('CRITICAL:'), lines)
+                self.assertIn('Configuration error: FIDO_DB_URL', lines[0])
+                self.assertIn(problem, lines[0])
+                self.assertEqual(fido.stderr(), '')
+
+    async def test_l_malformed_database_url_exits_2_with_one_line(self):
+        fido = await self.start_fido(self.env(free_port(), FIDO_DB_URL='notaurl'))
+        code, _ = await fido.exit_code(START_TIMEOUT)
+        self.assertEqual(code, 2)
+        self.assertEqual(fido.stderr(), '')
+        lines = fido.stdout().splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith('CRITICAL:'), lines)
+        self.assertIn('Configuration error: FIDO_DB_URL', lines[0])
 
     async def test_i_unparsable_values_exit_2_with_one_line_and_no_traceback(self):
         for name, value, problem in (('FIDO_IRC_PORT', 'abc', 'FIDO_IRC_PORT must be an integer'),

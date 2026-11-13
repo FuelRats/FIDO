@@ -250,6 +250,37 @@ class OperCheckTest(CommandTestCase):
         await self.server(f':{RAT}!jameson2@192.0.2.11 QUIT :Quit: bye')
         self.assertTrue(await access.is_irc_operator(self.bot, RAT))
 
+    async def assert_whois_held_across_is_not_cached(self, departure):
+        """
+        An operator check on OPER whose WHOIS is answered only after the server line departure
+        (OPER leaving the nick) returns that answer, caches nothing, and the next check WHOISes again.
+        """
+        answer = self.bot.whois
+        released = asyncio.Event()
+
+        async def held(nickname):
+            if nickname == OPER:
+                await released.wait()
+            return await answer(nickname)
+
+        with mock.patch.object(self.bot, 'whois', side_effect=held) as whois:
+            check = asyncio.create_task(access.is_irc_operator(self.bot, OPER))
+            async with asyncio.timeout(harness.WAIT_TIMEOUT):
+                while not whois.called:
+                    await asyncio.sleep(0)
+            await self.server(departure)
+            released.set()
+            self.assertTrue(await check)
+            self.assertEqual(self.bot.oper_cache, {})
+            await access.is_irc_operator(self.bot, OPER)
+            self.assertEqual([call.args[0] for call in whois.call_args_list].count(OPER), 2)
+
+    async def test_whois_held_across_a_nick_change_is_not_cached(self):
+        await self.assert_whois_held_across_is_not_cached(f':{OPER}!jameson@{OPER_HOST} NICK :Jameson_away')
+
+    async def test_whois_held_across_a_quit_is_not_cached(self):
+        await self.assert_whois_held_across_is_not_cached(f':{OPER}!jameson@{OPER_HOST} QUIT :Quit: bye')
+
     async def test_nick_without_whois_reply_is_not_an_oper(self):
         self.assertFalse(await access.is_irc_operator(self.bot, 'Jameson9'))
 
@@ -261,6 +292,57 @@ class OperCheckTest(CommandTestCase):
         configmanager.set_config('commandhandler', 'bothost', '192.0.2.11')
         await self.command(f'!mute 1m {CLIENT}', sender=RAT)
         self.assertEqual(self.bot.lines, [])
+
+
+class WhoisFromServerTest(CommandTestCase):
+    """
+    The IRC operator check on WHOIS replies that pydle parses, worded as UnrealIRCd 6.2.6 sends them.
+    A services bot (BotServ, umodes +BioqS) gets the operator 313, but also the network service 313
+    and the bot line 335.
+    """
+    BOT_HOST = 'services.example.test'
+    OPERATOR_313 = 'is an IRC Operator (jameson) [netadmin]'
+    SERVICE_313 = 'is a Network Service'
+    BOT_335 = 'is a \x02Bot\x02 on Example'
+
+    def setUp(self):
+        super().setUp()
+        self.bot.whois_from_server = True
+
+    def whois_reply(self, nick, *extra):
+        """311, 312, the extra (numeric, text) lines, then 318."""
+        lines = [f':{SERVER} 311 {BOT} {nick} {nick.lower()} {self.BOT_HOST} * :{nick}',
+                 f':{SERVER} 312 {BOT} {nick} {SERVER} :Example server']
+        lines += [f':{SERVER} {numeric} {BOT} {nick} :{text}' for numeric, text in extra]
+        return lines + [f':{SERVER} 318 {BOT} {nick} :End of /WHOIS list.']
+
+    async def lockdown_by(self, nick, reply):
+        task = asyncio.create_task(self.command('!lockdown', sender=nick, channel=OPERS))
+        await self.bot.whois_pending(nick)
+        for line in reply:
+            await self.server(line)
+        await task
+
+    async def test_services_bot_is_not_an_irc_operator(self):
+        replies = {
+            'operator, network service and bot lines': (('313', self.OPERATOR_313), ('313', self.SERVICE_313),
+                                                        ('335', self.BOT_335)),
+            'operator and network service lines': (('313', self.OPERATOR_313), ('313', self.SERVICE_313)),
+            'operator and bot lines': (('313', self.OPERATOR_313), ('335', self.BOT_335)),
+        }
+        for name, extra in replies.items():
+            with self.subTest(name):
+                self.bot.lines.clear()
+                self.bot.oper_cache.clear()
+                await self.lockdown_by(RAT, self.whois_reply(RAT, *extra))
+                self.assertEqual(self.non_privmsg_lines(), [f'WHOIS {RAT}'])
+                self.assertEqual(self.replies(OPERS), ['You must be an IRC operator to lock down #ratchat.'])
+                self.assertEqual(self.config_rows('droneprotection', 'lockdown'), [])
+
+    async def test_irc_operator_passes(self):
+        await self.lockdown_by(OPER, self.whois_reply(OPER, ('313', self.OPERATOR_313)))
+        self.assertEqual(self.non_privmsg_lines(), [f'WHOIS {OPER}', f'MODE {RATCHAT} +b {LOCKDOWN_BAN}'])
+        self.assertEqual(self.config_rows('droneprotection', 'lockdown'), ['True'])
 
 
 class PuppetTest(CommandTestCase):
@@ -448,6 +530,15 @@ class JoinPartTest(CommandTestCase):
         self.assertEqual(self.config_rows('channels', 'join'), ['#rescue'])
         self.assertEqual(self.replies(), ['Joined: #rescue.'])
 
+    async def test_comma_separated_channels_are_joined_and_remembered_one_by_one(self):
+        self.bot.echo_joins = True
+        with mock.patch.object(channels, 'JOIN_CONFIRM_TIMEOUT', 0.5):
+            await self.command('!join #rescue,#drillrats,#Rescue')
+        self.assertEqual([line for line in self.bot.lines if line.startswith('JOIN ')],
+                         ['JOIN #rescue', 'JOIN #drillrats'])
+        self.assertEqual(self.config_rows('channels', 'join'), ['#rescue', '#drillrats'])
+        self.assertEqual(self.replies(), ['Joined: #rescue, #drillrats.'])
+
     async def test_join_without_an_echo(self):
         with mock.patch.object(channels, 'JOIN_CONFIRM_TIMEOUT', 0.05):
             await self.command('!join #rescue')
@@ -521,6 +612,22 @@ class FetchTest(CommandTestCase):
             await self.command(f'!fetch {CLIENT}', channel=OPERS)
         self.assertEqual(get.call_args.args, (f'https://ipinfo.io/{CLIENT_HOST}',))
         self.assertIn(f'IP Information {CLIENT_HOST}:', self.replies(OPERS)[0])
+
+    async def test_a_failed_lookup_is_reported_and_the_next_address_still_answered(self):
+        good = mock.Mock()
+        good.json.return_value = {'ip': '192.0.2.1', 'country': 'NO', 'org': 'AS64496 Example'}
+        not_json = mock.Mock()
+        not_json.json.side_effect = fetch.requests.exceptions.JSONDecodeError('Expecting value', '<html>', 0)
+        get = mock.Mock(side_effect=[good, fetch.requests.exceptions.ReadTimeout('read timed out'), not_json, good])
+        with mock.patch.object(fetch.requests, 'get', get), harness.capture_logs(logging.WARNING):
+            await self.command('!fetch 192.0.2.1 192.0.2.2 192.0.2.3 192.0.2.4', channel=OPERS)
+        replies = self.replies(OPERS)
+        self.assertEqual(len(replies), 4, replies)
+        self.assertTrue(replies[0].startswith('IP Information 192.0.2.1:'), replies)
+        self.assertEqual(replies[1:3], ['Could not fetch IP information for 192.0.2.2: ReadTimeout',
+                                        'Could not fetch IP information for 192.0.2.3: JSONDecodeError'])
+        self.assertTrue(replies[3].startswith('IP Information 192.0.2.1:'), replies)
+        self.assertEqual([call.kwargs.get('timeout') for call in get.call_args_list], [fetch.HTTP_TIMEOUT] * 4)
 
     async def test_operations_channel_is_not_allowed(self):
         self.bot.add_user(OPER, channel='#operations', status='o', oper=True)

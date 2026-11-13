@@ -369,5 +369,56 @@ class RegisteredLoginTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(bot._sasl_deadline)
 
 
+class DeadlineRaceTest(unittest.IsolatedAsyncioTestCase):
+    """The client-side SASL deadline against the server's answer, on a FakeBot after registration."""
+
+    PREFIX = f":{SERVER_NAME}"
+
+    async def asyncSetUp(self):
+        self.enterContext(mock.patch.multiple(IRC, saslUsername=ACCOUNT, saslPassword=secrets.token_urlsafe(24)))
+        self.enterContext(mock.patch.object(fido, 'SASL_TIMEOUT', TIMEOUT))
+        self.logs = self.enterContext(harness.capture_logs(logging.INFO))
+        self.bot = harness.FakeBot()
+        self.bot._exit_code = asyncio.get_running_loop().create_future()
+
+    async def ack(self):
+        await self.bot.receive(f"{self.PREFIX} CAP {ACCOUNT} ACK :sasl")
+
+    async def login(self):
+        await self.bot.receive('AUTHENTICATE +')
+        await self.bot.receive(f"{self.PREFIX} 900 {ACCOUNT} {ACCOUNT}!fido@{SERVER_NAME} {ACCOUNT} "
+                               f":You are now logged in as {ACCOUNT}")
+        await self.bot.receive(f"{self.PREFIX} 903 {ACCOUNT} :SASL authentication successful")
+
+    def assert_no_failure(self):
+        self.assertEqual([record.getMessage() for record in self.logs.records if record.levelno >= logging.ERROR],
+                         [])
+        self.assertNotIn(f'AUTHENTICATE {fido.SASL_ABORT}', self.bot.lines)
+        self.assertEqual(self.bot._exit_not_before, 0.0)
+        self.assertFalse(self.bot._exit_code.done())
+
+    async def test_903_between_the_deadline_and_its_task_ends_the_exchange_as_a_success(self):
+        await self.bot.receive(f"{self.PREFIX} CAP {ACCOUNT} NEW :{SASL_TOKEN}")
+        await self.ack()
+        deadline = self.bot._sasl_deadline
+        deadline.cancel()
+        self.bot._sasl_deadline_passed()  # what the deadline timer runs; the task it starts has not run yet
+        await self.login()
+        await self.bot._sasl_timeout_task
+        self.assert_no_failure()
+
+    async def test_a_second_ack_replaces_the_armed_deadline(self):
+        for _ in range(2):  # services relinked before FIDO's CAP REQ was answered
+            await self.bot.receive(f"{self.PREFIX} CAP {ACCOUNT} NEW :{SASL_TOKEN}")
+        await self.ack()
+        first = self.bot._sasl_deadline
+        await self.ack()
+        self.assertTrue(first.cancelled())
+        self.assertIsNot(self.bot._sasl_deadline, first)
+        await self.login()
+        await asyncio.sleep(TIMEOUT + 2 * SLACK)
+        self.assert_no_failure()
+
+
 if __name__ == '__main__':
     unittest.main()

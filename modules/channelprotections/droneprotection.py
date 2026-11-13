@@ -1,14 +1,16 @@
 import datetime
+import ipaddress
 import logging
 import fido
 from models import drones, session_scope
-from modules import configmanager
+from modules import access, configmanager
 import re
 
 log = logging.getLogger(__name__)
 
+# A proxy monitor's report; it starts the message.
 regex = re.compile(
-    r'.*DNSBL -> (?P<nick>.*)!(?P<user>.*)@[A-Za-z0-9.:_\-]* \[(?P<ip>[A-Za-z0-9.:_\-]*)\] appears '
+    r'DNSBL -> (?P<nick>.*)!(?P<user>.*)@[A-Za-z0-9.:_\-]* \[(?P<ip>[A-Za-z0-9.:_\-]*)\] appears '
     r'in BL zone (?P<zone>[A-Za-z0-9.:_\-]*) \((?P<type>.*)\)')
 
 # Lockdown: unidentified users joining #ratchat are forwarded to #NewRats. The named form is what
@@ -26,7 +28,7 @@ def in_lockdown() -> bool:
 
 async def on_message(bot: fido, channel: str, sender: str, message: str):
     # Locks down if an excessive number of drones start joining the network. We're only interested in msgs in
-    # the #opers channel.
+    # the #opers channel, from IRC operators.
     if channel != '#opers':
         return
     # Only act if we're seeing a DNSBl message.
@@ -41,6 +43,14 @@ async def on_message(bot: fido, channel: str, sender: str, message: str):
         session.query(drones.Drones).filter(drones.Drones.timestamp <= delta).delete()
     match = re.match(regex, message)
     if match:
+        if not await access.is_irc_operator(bot, sender):
+            log.info(f"Ignored a DNSBL report from {sender}: not an IRC operator")
+            return
+        try:
+            ipaddress.ip_address(match.group('ip'))
+        except ValueError:
+            log.warning(f"Ignored a DNSBL report from {sender}: its address is not an IP address")
+            return
         log.info(f"Got a regex match for DNSBL message: {match.group('nick')} is a "
                  f"{match.group('type')} listed in {match.group('zone')}")
         drone = drones.Drones(timestamp=datetime.datetime.now(), nickname=match.group('nick'),

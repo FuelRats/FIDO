@@ -4,7 +4,6 @@ from config import IRC
 import requests
 import ipaddress
 import fido
-from requests.exceptions import SSLError
 
 from modules.access import require_oper
 import logging
@@ -51,9 +50,10 @@ async def invoke(bot: fido, channel: str, sender: str, args: List[str]):
             response = (await asyncio.to_thread(requests.get, f'https://ipinfo.io/{ip}',
                                                 headers={'Accept': 'application/json'},
                                                 timeout=HTTP_TIMEOUT)).json()
-        except SSLError:
-            await bot.message(channel, "An SSL error occurred while trying to retrieve IP information.")
-            return
+        except (requests.RequestException, ValueError) as error:
+            log.warning(f"IP information lookup failed: {type(error).__name__}")
+            lines.append(f"Could not fetch IP information for {ip}: {type(error).__name__}")
+            continue
         log.debug(response)
         location = []
         if 'error' in response:

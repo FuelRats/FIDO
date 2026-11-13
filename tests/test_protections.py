@@ -165,13 +165,20 @@ class UntrackedChannelTest(ProtectionTestCase):
 
 
 class DroneTest(ProtectionTestCase):
-    def report(self, n):
-        return (f'DNSBL -> Jameson{n}!jameson@192.0.2.{n} [192.0.2.{n}] appears in BL zone dnsbl.example.test '
+    REPORTER = 'Jameson2'  # an IRC operator
+
+    def setUp(self):
+        super().setUp()
+        self.bot.add_user(self.REPORTER, hostname='192.0.2.11', channel=OPERS, oper=True)
+
+    def report(self, n, ip=None):
+        ip = f'192.0.2.{n}' if ip is None else ip
+        return (f'DNSBL -> Jameson{n}!jameson@192.0.2.{n} [{ip}] appears in BL zone dnsbl.example.test '
                 f'(open proxy)')
 
-    async def drones(self, count):
+    async def drones(self, count, sender=REPORTER):
         for n in range(1, count + 1):
-            await droneprotection.on_message(self.bot, OPERS, 'Jameson2', self.report(n))
+            await droneprotection.on_message(self.bot, OPERS, sender, self.report(n))
             await asyncio.sleep(0)  # one loop step per report keeps asyncio's slow-step debug report quiet
 
     def lockdown_rows(self):
@@ -210,6 +217,33 @@ class DroneTest(ProtectionTestCase):
         await self.drones(1)
         self.assertEqual(self.bot.lines, [])
         self.assertEqual(self.db.count('drones'), 5)
+
+    async def test_reports_from_a_user_who_is_no_irc_operator_are_ignored(self):
+        self.bot.add_user(SENDER, channel=OPERS)
+        with harness.capture_logs(logging.INFO):
+            await self.drones(4, sender=SENDER)
+            configmanager.set_config('droneprotection', 'lockdown', 'True')
+            await self.drones(1, sender=SENDER)
+        self.assertEqual(self.bot.lines, [])
+        self.assertEqual(self.db.count('drones'), 0)
+        self.assertEqual(self.lockdown_rows(), ['True'])
+
+    async def test_a_report_must_start_the_message(self):
+        with harness.capture_logs(logging.INFO):
+            for n in range(1, 5):
+                await droneprotection.on_message(self.bot, OPERS, self.REPORTER, f'lol {self.report(n)}')
+        self.assertEqual(self.bot.lines, [])
+        self.assertEqual(self.db.count('drones'), 0)
+
+    async def test_an_address_that_is_no_ip_address_is_not_glined(self):
+        configmanager.set_config('droneprotection', 'lockdown', 'True')
+        with harness.capture_logs(logging.INFO):
+            for ip in ('', 'example.test', '192.0.2.300', '-'):
+                await droneprotection.on_message(self.bot, OPERS, self.REPORTER, self.report(5, ip=ip))
+        self.assertFalse(any(line.startswith('GLINE') for line in self.bot.lines), self.bot.lines)
+        await droneprotection.on_message(self.bot, OPERS, self.REPORTER, self.report(6, ip='2001:db8::6'))
+        self.assertIn('GLINE *@2001:db8::6 7d Connecting through a VPN or open proxy is not currently allowed.',
+                      self.bot.lines)
 
 
 class GreetingTest(ProtectionTestCase):
@@ -251,6 +285,34 @@ class GreetingTest(ProtectionTestCase):
         await self.join()
         await self.join(nick='Jameson9')  # no WHOIS reply: gone already
         self.assertEqual(self.bot.lines, [])
+
+    async def test_identified_and_gone_users_are_not_remembered_as_greeted(self):
+        self.bot.add_user(SENDER, identified=True)
+        await self.join()
+        await self.join(nick='Jameson9')
+        self.assertEqual(self.bot.recent_greeting, {})
+        self.bot.add_user(SENDER, identified=False)  # logged out of services since
+        await self.join()
+        self.assertEqual(self.bot.lines, self.GREETING)
+
+    async def test_joins_while_one_whois_is_pending_get_one_greeting(self):
+        self.bot.add_user(SENDER)
+        pending = asyncio.get_running_loop().create_future()
+        asked = []
+
+        async def shared_whois(nickname):
+            """pydle answers every WHOIS of one nick sent before the reply with the same future."""
+            asked.append(nickname)
+            return await pending
+
+        with mock.patch.object(self.bot, 'whois', side_effect=shared_whois):
+            joins = [asyncio.create_task(self.join()) for _ in range(3)]
+            async with asyncio.timeout(harness.WAIT_TIMEOUT):
+                while len(asked) + sum(join.done() for join in joins) < len(joins):
+                    await asyncio.sleep(0)
+            pending.set_result(self.bot.whois_replies[SENDER])
+            await asyncio.gather(*joins)
+        self.assertEqual(self.bot.lines, self.GREETING)
 
     async def test_other_channels_and_gate_off(self):
         self.bot.add_user(SENDER)

@@ -5,6 +5,7 @@ irc.example.test.
 
 Import it as `from tests import harness` so every test module shares one copy.
 """
+import asyncio
 import collections
 import contextlib
 import logging
@@ -26,9 +27,11 @@ PROD_SCHEMA = FIXTURES / 'prod_schema.sql'
 RESERVED_STATEMENT = 'CREATE TABLE sqlite_sequence'
 
 SERVER_NAME = 'irc.example.test'
+WAIT_TIMEOUT = 5  # seconds a test waits for the bot to get somewhere
 BOT_NICK = 'FIDO[BOT]'
 USER_NICK = 'Jameson'
 USER_HOST = '192.0.2.10'
+PYDLE_HANDLER_FAILURE = 'Failed to execute'  # how pydle's on_raw logs a handler that raised
 # UnrealIRCd's PREFIX=(qaohv)~&@%+
 PREFIXES = collections.OrderedDict([('~', 'q'), ('&', 'a'), ('@', 'o'), ('%', 'h'), ('+', 'v')])
 
@@ -131,7 +134,9 @@ class FakeBot(fido.FIDO):
     """
     A real FIDO, registered on irc.example.test without a socket. pydle formats every command as
     usual, so `lines` holds the exact wire lines (PRIVMSG, MODE, KICK, GLINE, MONITOR ...).
-    WHOIS is answered from `whois_replies` (a missing nick gives None, as for 401).
+    WHOIS is answered from `whois_replies` (a missing nick gives None, as for 401); with
+    `whois_from_server` on, pydle sends it and builds the answer from the numerics the test feeds
+    to `receive` once `whois_pending` returns.
     `receive(line)` runs a server line through pydle's parser and handlers. With `echo_joins` on,
     every JOIN FIDO sends is answered with the server's echo, as a real server does.
     Constructible without a running event loop.
@@ -146,6 +151,7 @@ class FakeBot(fido.FIDO):
         self._isupport.update({'MONITOR': '128', 'WHOX': True})
         self._nickname_prefixes = PREFIXES.copy()
         self.whois_replies = {}
+        self.whois_from_server = False
         self.echo_joins = False
 
     @property
@@ -201,18 +207,49 @@ class FakeBot(fido.FIDO):
         return self.users[nickname]
 
     async def whois(self, nickname):
+        if self.whois_from_server:
+            return await super().whois(nickname)
         return self.whois_replies.get(nickname)
 
+    async def whois_pending(self, nickname, timeout=WAIT_TIMEOUT):
+        """Wait until pydle waits for the WHOIS reply about nickname, so the numerics fed now reach it."""
+        async with asyncio.timeout(timeout):
+            while nickname not in self._pending['whois']:
+                await asyncio.sleep(0)
+
     async def receive(self, line: str):
-        """Handle one line from the server, as read from the socket, and wait for its handlers."""
+        """
+        Handle one line from the server, as read from the socket, and wait for its handlers. pydle
+        logs an exception from a handler and drops it; here it fails the test.
+        """
         self._receive_buffer += (line + '\r\n').encode(self.encoding)
         while self._has_message():
-            await self.on_raw(self._parse_message())
+            failures = HandlerFailures()
+            self.logger.addHandler(failures)
+            try:
+                await self.on_raw(self._parse_message())
+            finally:
+                self.logger.removeHandler(failures)
+            if failures.errors:
+                error = failures.errors[0]
+                raise AssertionError(f"a pydle handler raised {type(error).__name__}: {error}") from error
 
     async def join(self, channel, password=None):
         await super().join(channel, password)
         if self.echo_joins:
             await self.receive(f":{self.nickname}!fido@{SERVER_NAME} JOIN :{channel}")
+
+
+class HandlerFailures(logging.Handler):
+    """Keeps the exceptions of the records pydle logs when a handler raises ("Failed to execute ...")."""
+
+    def __init__(self):
+        super().__init__(logging.ERROR)
+        self.errors = []
+
+    def emit(self, record):
+        if record.getMessage().startswith(PYDLE_HANDLER_FAILURE) and record.exc_info:
+            self.errors.append(record.exc_info[1])
 
 
 class CaptureHandler(logging.Handler):

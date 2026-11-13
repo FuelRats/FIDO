@@ -216,6 +216,7 @@ class ProtectionsTest(DBTestCase):
     async def test_drone_during_lockdown_is_glined(self):
         configmanager.set_config('droneprotection', 'lockdown', 'True')
         bot = harness.FakeBot()
+        bot.add_user(OTHER_NICK, hostname=OTHER_HOST, channel=OPER_CHANNEL, oper=True)
         report = (f'DNSBL -> {JAMESON}!jameson@{HOST} [{HOST}] appears in BL zone dnsbl.example.test '
                   f'(open proxy)')
         await droneprotection.on_message(bot, OPER_CHANNEL, OTHER_NICK, report)

@@ -24,6 +24,10 @@ RUN_TIMEOUT = 10  # seconds a session may take in any test
 EXIT_WITHIN = 5  # seconds an expected exit may take
 SHUTDOWN_WITHIN = 4  # seconds from SIGTERM to exit 0
 OPER_NAME = 'fido-test'
+SILENCE_LIMIT = 1  # seconds, the lowered FIDO_SILENCE_LIMIT of the keep-alive test
+LINE_INTERVAL = 0.3  # seconds between two server lines in that test
+KEPT_ALIVE_FOR = 2.5  # seconds the server keeps sending lines in that test
+SILENCE_SLACK = 0.1  # seconds of timer jitter allowed
 
 
 def quit_reason(line: str):
@@ -198,6 +202,21 @@ class ExitContractTest(SessionTestCase):
         _, _, task = await self.opered_session(silenceLimit=1)
         code, _ = await self.exit_code(task)
         self.assertEqual(code, fido.EXIT_SESSION_LOST)
+        self.assertTrue(self.logged('no line received for'))
+
+    async def test_received_lines_keep_the_session_within_the_silence_limit(self):
+        ircd, _, task = await self.opered_session(silenceLimit=SILENCE_LIMIT)
+        loop = asyncio.get_running_loop()
+        until = loop.time() + KEPT_ALIVE_FOR
+        count = 0
+        while loop.time() < until:
+            await ircd.send(f":{SERVER_NAME} NOTICE {harness.BOT_NICK} :line {count}")
+            count += 1
+            await asyncio.sleep(LINE_INTERVAL)
+            self.assertFalse(task.done(), f"the session ended after {count} lines")
+        code, elapsed = await self.exit_code(task)
+        self.assertEqual(code, fido.EXIT_SESSION_LOST)
+        self.assertGreaterEqual(elapsed, SILENCE_LIMIT - LINE_INTERVAL - SILENCE_SLACK)
         self.assertTrue(self.logged('no line received for'))
 
     async def test_oper_464_waits_out_the_backoff(self):

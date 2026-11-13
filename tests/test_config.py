@@ -137,6 +137,17 @@ class MainValidationTest(unittest.TestCase):
                 'FIDO_SILENCE_LIMIT must be above 0',
             ])
 
+    def test_session_retention_below_one_day_is_refused(self):
+        problem = 'FIDO_SESSION_RETENTION_DAYS must be at least 1'
+        for days, problems in ((0, [problem]), (-30, [problem]), (1, []), (90, [])):
+            with mock.patch.multiple(IRC, operline='fido-test', operlinePassword='set'), \
+                    mock.patch.object(config.SessionHandler, 'retention_time', days):
+                self.assertEqual(fido.config_problems(), problems, days)
+        with mock.patch.multiple(IRC, operline='fido-test', operlinePassword='set'), \
+                mock.patch.object(config.SessionHandler, 'retention_time', 0):
+            self.assertEqual(self.run_main(), fido.EXIT_CONFIG)
+        self.assertIn(f'Configuration error: {problem}', self.logs.messages())
+
     def test_complete_settings_have_no_problems(self):
         with mock.patch.multiple(IRC, operline='fido-test', operlinePassword='set'):
             self.assertEqual(fido.config_problems(), [])
@@ -242,6 +253,31 @@ class SetConfigScriptTest(unittest.TestCase):
             self.assertNotIn('stored-value', err)
         self.assertEqual(configmanager.get_config('nexmo', 'secret'), ['stored-value'])
         self.assertEqual(configmanager.get_config('sms', 'secret'), [])
+
+    def test_gates_take_only_on_or_off(self):
+        for value in ('false', '0', 'no', 'disabled', ''):
+            code, out, err = self.run_script('notices', 'sms', value)
+            self.assertEqual(code, set_config.EXIT_REFUSED, value)
+            self.assertEqual(out, '')
+            self.assertIn('Refusing notices/sms', err)
+            self.assertIn("'on' or 'off'", err)
+        self.assertEqual(configmanager.get_config('notices', 'sms'), [])
+        for module, key in configmanager.GATES:
+            self.assertEqual(self.run_script(module, key, 'OFF')[0], set_config.EXIT_OK, (module, key))
+            self.assertIs(configmanager.gate_open((module, key)), False)
+
+    def test_keys_with_an_integer_default_take_only_integers(self):
+        for key in ('droneinterval', 'maxdrones', 'maxhighlightcount', 'maxmessages', 'messageinterval',
+                    'mutetime'):
+            for value in ('four', '4.5', ''):
+                code, out, err = self.run_script('channelprotection', key, value)
+                self.assertEqual(code, set_config.EXIT_REFUSED, (key, value))
+                self.assertEqual(out, '')
+                self.assertIn('an integer', err)
+            self.assertEqual(configmanager.get_config('channelprotection', key), [])
+        self.assertEqual(self.run_script('channelprotection', 'maxmessages', '7')[0], set_config.EXIT_OK)
+        self.assertEqual(configmanager.get_value('channelprotection', 'maxmessages'), '7')
+        self.assertEqual(self.run_script('channelprotection', 'reason', 'Flooding')[0], set_config.EXIT_OK)
 
     def test_a_multi_row_key_is_collapsed_and_reported(self):
         with session_scope() as session:

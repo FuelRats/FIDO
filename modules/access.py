@@ -91,8 +91,9 @@ def require_permission(level: Levels, above: bool = True, message: str = None):
 
 async def is_irc_operator(bot: fido, nick: str) -> bool:
     """
-    Whether nick is an IRC operator, from the 313 line of a WHOIS (pydle's 'oper' field). The answer is
-    cached per nick for OPER_CACHE_SECONDS; forget_oper drops it on a nick change or quit.
+    Whether nick is an IRC operator, from the 313 line of a WHOIS (pydle's 'oper' field), and not a
+    bot or services bot (the 'bot' and 'service' fields, see fido.FIDO.on_raw_313 and on_raw_335).
+    The answer is cached per nick for OPER_CACHE_SECONDS; forget_oper drops it on a nick change or quit.
     """
     key = bot.normalize(nick)
     cached = bot.oper_cache.get(key)
@@ -100,7 +101,7 @@ async def is_irc_operator(bot: fido, nick: str) -> bool:
         return cached[1]
     generation = bot.oper_cache_generation
     whois = await bot.whois(nick)
-    oper = bool(whois and whois.get('oper'))
+    oper = bool(whois and whois.get('oper') and not whois.get('bot') and not whois.get('service'))
     if bot.oper_cache_generation == generation:
         # No nick change or quit happened during the WHOIS, so the answer still belongs to this nick.
         bot.oper_cache[key] = (time.monotonic() + OPER_CACHE_SECONDS, oper)

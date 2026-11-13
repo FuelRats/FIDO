@@ -7,22 +7,27 @@ import sys
 import pydle
 import pydle.connection
 import pydle.protocol
+import sqlalchemy
+from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
 EXIT_OK = 0
 EXIT_SESSION_LOST = 1
 EXIT_CONFIG = 2
 
 try:
-    from config import IRC, Logging
-except ValueError as config_error:
-    # A boolean or integer variable that does not parse. Run as the entry point, that is a
-    # configuration error like those config_problems() finds; imported, the error propagates.
+    from config import IRC, Logging, SessionHandler
+    import models
+    from models import config as config_table, meta, monitor, session_scope
+except (ValueError, ArgumentError) as config_error:
+    # A boolean or integer variable that does not parse, or a FIDO_DB_URL that SQLAlchemy cannot
+    # read (models builds its engine at import). Run as the entry point, that is a configuration
+    # error like those config_problems() finds; imported, the error propagates.
     if __name__ != '__main__':
         raise
+    problem = f"FIDO_DB_URL: {config_error}" if isinstance(config_error, ArgumentError) else config_error
     logging.basicConfig(stream=sys.stdout)
-    logging.getLogger(__name__).critical(f"Configuration error: {config_error}")
+    logging.getLogger(__name__).critical(f"Configuration error: {problem}")
     sys.exit(EXIT_CONFIG)
-from models import monitor, session_scope
 from modules import noticehandler, channelprotectionhandler
 from modules import commandhandler as commandHandler
 from modules import access, configmanager
@@ -40,6 +45,8 @@ SASL_TIMEOUT = 15  # seconds from AUTHENTICATE PLAIN to 903/904/905/906; read at
 SASL_CHUNK = 400  # base64 bytes per AUTHENTICATE line (IRCv3 SASL)
 SASL_EMPTY = '+'  # empty challenge, or the end of a response that filled its last line
 SASL_ABORT = '*'
+WHOIS_SERVICE = 'is a Network Service'  # the 313 text UnrealIRCd sends for a services bot (umode +S)
+DB_CHECK_ROW = {'module': 'fido', 'key': 'startup_check', 'value': 'rolled back'}  # written, never committed
 
 
 class ServerNameConnection(pydle.connection.Connection):
@@ -340,8 +347,12 @@ class FIDO(pydle.Client):
         return True
 
     async def on_capability_sasl_enabled(self):
-        """The server acknowledged sasl: start PLAIN. NEGOTIATING holds CAP END until _sasl_finish()."""
+        """
+        The server acknowledged sasl: start PLAIN. NEGOTIATING holds CAP END until _sasl_finish().
+        Each acknowledgement starts the exchange over, with one deadline.
+        """
         self._sasl_awaiting_challenge = True
+        self._cancel_sasl_deadline()
         self._sasl_deadline = asyncio.get_running_loop().call_later(SASL_TIMEOUT, self._sasl_deadline_passed)
         await self.rawmsg('AUTHENTICATE', SASL_MECHANISM)
         return pydle.CAPABILITY_NEGOTIATING
@@ -394,6 +405,9 @@ class FIDO(pydle.Client):
         self._sasl_timeout_task = asyncio.get_running_loop().create_task(self._sasl_timed_out())
 
     async def _sasl_timed_out(self):
+        """Runs as its own task, so a final numeric handled before it has already ended the exchange."""
+        if SASL_CAPABILITY not in self._capabilities_negotiating:
+            return
         self._failed_with_backoff('SASL', f"no reply within {SASL_TIMEOUT} s")
         if not self.connected:
             return
@@ -489,12 +503,27 @@ class FIDO(pydle.Client):
     async def on_raw_368(self, message):
         """RPL_ENDOFBANLIST: the 367 lines before it already filled the list."""
 
+    async def on_raw_313(self, message):
+        """
+        RPL_WHOISOPERATOR. pydle sets the WHOIS field 'oper' for every 313; UnrealIRCd also sends
+        one, worded WHOIS_SERVICE, for a services bot, which sets 'service' as well.
+        """
+        await super().on_raw_313(message)
+        nickname = message.params[1]
+        if nickname in self._pending['whois'] and message.params[2:3] == [WHOIS_SERVICE]:
+            self._whois_info[nickname]['service'] = True
+
+    async def on_raw_335(self, message):
+        """RPL_WHOISBOT: the user has umode +B; sets the WHOIS field 'bot'."""
+        nickname = message.params[1]
+        if nickname in self._pending['whois']:
+            self._whois_info[nickname]['bot'] = True
+
     # UnrealIRCd 6 numerics that pydle has no handler for and would log as "Unknown command" at
     # WARNING: 396 (displayed host, at connect) and the WHOIS lines 276 (certificate fingerprint),
-    # 320 (swhois), 335 (bot), 344 (country), 379 (user modes) and 569 (ASN). FIDO uses none of
-    # them, and pydle logs every received line at DEBUG already.
-    on_raw_276 = on_raw_320 = on_raw_335 = on_raw_344 = on_raw_379 = on_raw_396 = on_raw_569 = (
-        pydle.BasicClient._ignored)
+    # 320 (swhois), 344 (country), 379 (user modes) and 569 (ASN). FIDO uses none of them, and
+    # pydle logs every received line at DEBUG already.
+    on_raw_276 = on_raw_320 = on_raw_344 = on_raw_379 = on_raw_396 = on_raw_569 = pydle.BasicClient._ignored
 
     async def on_nick_change(self, old, new):
         """
@@ -589,13 +618,38 @@ def config_problems() -> list:
         problems.append("FIDO_STARTUP_DEADLINE must be above 0")
     if IRC.silenceLimit <= 0:
         problems.append("FIDO_SILENCE_LIMIT must be above 0")
+    if SessionHandler.retention_time < 1:
+        problems.append("FIDO_SESSION_RETENTION_DAYS must be at least 1")
     return problems
+
+
+def database_problems() -> list:
+    """
+    What makes the database at FIDO_DB_URL unusable: a table of the models missing, or a read of the
+    config table or a write failing. The write is rolled back.
+    """
+    try:
+        present = set(sqlalchemy.inspect(models.engine).get_table_names())
+        missing = sorted(set(meta.Base.metadata.tables) - present)
+        if missing:
+            return [f"FIDO_DB_URL: tables missing ({', '.join(missing)}); run python -m scripts.initializedb"]
+        session = models.Session()
+        try:
+            session.query(config_table.Config).first()
+            session.add(config_table.Config(**DB_CHECK_ROW))
+            session.flush()
+        finally:
+            session.rollback()
+            session.close()
+    except SQLAlchemyError as error:
+        return [f"FIDO_DB_URL: the database is not usable: {getattr(error, 'orig', None) or error}"]
+    return []
 
 
 async def main() -> int:
     """Run one IRC session; the return value is the process exit code."""
     logging.basicConfig(stream=sys.stdout, level=logging.getLevelNamesMapping().get(Logging.level, logging.INFO))
-    problems = config_problems()
+    problems = config_problems() or database_problems()
     if problems:
         for problem in problems:
             log.critical(f"Configuration error: {problem}")
