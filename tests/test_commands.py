@@ -567,6 +567,17 @@ class JoinPartTest(CommandTestCase):
         self.assertEqual(self.non_privmsg_lines(), [f'PART {OPERS}'])
         self.assertEqual(self.config_rows('channels', 'join'), [])
 
+    async def test_comma_separated_channels_are_parted_and_forgotten_one_by_one(self):
+        joined = ['#rescue', '#drillrats']
+        for name in joined:
+            self.bot.add_channel(name)
+        with session_scope() as session:
+            session.add_all([config.Config(module='channels', key='join', value=name) for name in joined])
+        await self.command('!part #rescue,#drillrats')
+        self.assertEqual(self.non_privmsg_lines(), ['PART #rescue', 'PART #drillrats'])
+        self.assertEqual(self.config_rows('channels', 'join'), [])
+        self.assertEqual(self.replies(), ['Parted: #rescue, #drillrats.'])
+
 
 class SMSCommandTest(CommandTestCase):
     def setUp(self):

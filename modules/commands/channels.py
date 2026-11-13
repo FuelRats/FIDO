@@ -47,9 +47,10 @@ async def part_channel(bot: fido, channel: str, sender: str, args: List[str]):
     """
     channels: List[str] = []
     for arg in args:
-        if arg.startswith('#') and arg in bot.channels:
-            channels.append(arg)
-            await bot.part(arg)
+        for name in arg.split(','):  # '#a,#b' is two channels
+            if name.startswith('#') and name in bot.channels:
+                channels.append(name)
+                await bot.part(name)
     with session_scope() as session:
         for parted in channels:
             session.query(config.Config).filter_by(module='channels', key='join', value=parted).delete()
